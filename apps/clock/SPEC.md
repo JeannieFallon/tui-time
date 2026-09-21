@@ -55,6 +55,10 @@ Each step should run and be verifiable before the next starts.
    the size where big digits fit. Either compact HH:MM or a short
    message. Never undefined.
    *Verify: resize down to roughly 10x3.*
+7. **README.** Write apps/clock/README.md: what it does, how to run
+   it, what it looks like at small sizes, known limitations.
+   Describe actual behavior, not intended behavior.
+   *Verify: every claim in it is true of the code as written.*
 
 ## Failure modes
 

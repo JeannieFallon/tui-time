@@ -23,7 +23,9 @@ Every app in this repo must:
 - No curses, no Textual, no Rich, unless an app is interactive (none are yet)
 - One directory per app under apps/, one file where possible
 - PEP 723 inline metadata if an app ever needs a dependency
-- Run as: uv run apps/<name>/<name>.py
+- Run as: python3 apps/<name>/<name>.py
+- If an app needs a dependency, add PEP 723 inline metadata and run with uv
+
 
 ## Non-goals
 
