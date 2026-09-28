@@ -1,34 +1,38 @@
 # tui-time
 
-Small TUI apps to jazz up idle panes. Each app is standalone and
-non-interactive: it fills a tmux pane and is looked at, not driven.
+Small TUI apps to jazz up idle panes.
 
-## Pane contract
+Two classes of app, each with its own contract:
 
-Every app in this repo must:
-- Render on a timer, no input handling, no mouse
-- Build each frame as one string and write it once (no clear-then-draw)
-- Enter the alternate screen on start, leave it on every exit path
-- Hide the cursor on start, restore it on every exit path
-- Handle SIGINT, SIGTERM, and SIGHUP identically (tmux sends SIGHUP on
-  pane close)
-- Handle SIGWINCH by setting a flag; the handler must not draw
-- Define behavior at small sizes explicitly, never undefined
-- Respect NO_COLOR, degrade gracefully when stdout is not a tty
-- Fall back to ASCII when the terminal can't render block characters
+- `apps/ambient/` — non-interactive. Fills a pane, is looked at,
+  not driven. See apps/ambient/CLAUDE.md.
+- `apps/interactive/` — accepts keyboard input. See
+  apps/interactive/CLAUDE.md.
+
+Read the contract for the class you are working in.
 
 ## Conventions
 
-- Python 3, stdlib only, raw ANSI escapes
-- No curses, no Textual, no Rich, unless an app is interactive (none are yet)
-- One directory per app under apps/, one file where possible
-- PEP 723 inline metadata if an app ever needs a dependency
-- Run as: python3 apps/<name>/<name>.py
-- If an app needs a dependency, add PEP 723 inline metadata and run with uv
+- Python 3, stdlib only by default
+- One directory per app, one file where possible
+- No shared package. Duplicate until the third repetition.
+- Run as: python3 apps/<class>/<name>/<name>.py
+- If an app needs a dependency, add PEP 723 inline metadata and run
+  with uv
+- No packaging until an app outgrows a single file
 
+## App READMEs
+
+Each app has a README.md written as the last build step, not before.
+
+- What it does, in one or two lines
+- How to run it
+- Behavior at small pane sizes
+- Known limitations
+- No audience framing. Describe the app, not who it is for.
+- Describe what the code does, not what it is meant to do
 
 ## Non-goals
 
-- No shared framework. Duplicate until the third repetition.
-- No config files in v1 of anything.
-- No packaging until an app outgrows a single file.
+- No config files in v1 of anything
+- No shared framework
