@@ -14,6 +14,9 @@ CSI = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
 SGR = re.compile(r"\033\[[0-9;]*m")
 
 NOON = datetime(2026, 9, 29, 12, 34, 56)
+# Its first and last digits (2 and 0, or 8 for HH:MM) are inked edge to edge,
+# so the drawn bounding box is the full tier width.
+EDGE_TO_EDGE = datetime(2026, 9, 29, 20, 8, 0)
 UNICODE = clock.Caps(color=True, unicode=True)
 ASCII = clock.Caps(color=True, unicode=False)
 
@@ -37,6 +40,66 @@ class FrameBuildingTest(unittest.TestCase):
         frame = clock.build_frame(NOON, 80, 24, caps=ASCII)
         self.assertTrue(frame.isascii())
         self.assertIn("#", frame)
+
+
+def drawn_box(cells):
+    """(width, height) of the bounding box of non-blank cells."""
+    points = [(r, c) for r, line in enumerate(cells) for c, ch in enumerate(line) if ch != " "]
+    if not points:
+        return (0, 0)
+    rs = [r for r, _ in points]
+    cs = [c for _, c in points]
+    return (max(cs) - min(cs) + 1, max(rs) - min(rs) + 1)
+
+
+# Drawn size of each tier. Big digits are 5 wide, colons 2, with 1-cell gaps;
+# block glyphs are 5 rows tall, ASCII glyphs 10.
+BIG_FULL = {True: (41, 5), False: (41, 10)}
+BIG_SHORT = {True: (26, 5), False: (26, 10)}
+TEXT = (8, 1)
+BLANK = (0, 0)
+
+
+class SizeTierTest(unittest.TestCase):
+    def assertTier(self, caps, cols, rows, expected):
+        cells = grid(clock.build_frame(EDGE_TO_EDGE, cols, rows, caps=caps))
+        self.assertEqual(drawn_box(cells), expected)
+        if expected == TEXT:
+            self.assertIn("20:08:00", "".join(cells))
+        return cells
+
+    def test_largest_tier_that_fits_is_drawn(self):
+        cases = [
+            (UNICODE, 41, 5, BIG_FULL[True]),
+            (UNICODE, 40, 5, BIG_SHORT[True]),
+            (UNICODE, 41, 4, TEXT),
+            (UNICODE, 26, 5, BIG_SHORT[True]),
+            (UNICODE, 25, 5, TEXT),
+            (UNICODE, 8, 1, TEXT),
+            (UNICODE, 7, 1, BLANK),
+            (UNICODE, 8, 0, BLANK),
+            (ASCII, 41, 10, BIG_FULL[False]),
+            (ASCII, 40, 10, BIG_SHORT[False]),
+            (ASCII, 41, 9, TEXT),
+            (ASCII, 26, 10, BIG_SHORT[False]),
+            (ASCII, 25, 10, TEXT),
+        ]
+        for caps, cols, rows, expected in cases:
+            with self.subTest(unicode=caps.unicode, cols=cols, rows=rows):
+                self.assertTier(caps, cols, rows, expected)
+
+    def test_no_tier_is_ever_clipped(self):
+        for caps in (UNICODE, ASCII):
+            whole = {BIG_FULL[caps.unicode], BIG_SHORT[caps.unicode], TEXT, BLANK}
+            for cols in range(1, 50):
+                for rows in range(1, 13):
+                    with self.subTest(unicode=caps.unicode, cols=cols, rows=rows):
+                        cells = grid(clock.build_frame(EDGE_TO_EDGE, cols, rows, caps=caps))
+                        self.assertIn(drawn_box(cells), whole)
+
+    def test_blank_tier_is_a_full_padded_frame(self):
+        cells = self.assertTier(UNICODE, 7, 3, BLANK)
+        self.assertEqual(cells, [" " * 7] * 3)
 
 
 class FrameTimingTest(unittest.TestCase):

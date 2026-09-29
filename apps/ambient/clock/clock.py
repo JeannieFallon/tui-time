@@ -18,6 +18,7 @@ HOME = "\033[H"
 CLEAR = "\033[2J"
 
 GAP = " "
+BIG_FULL, BIG_SHORT, TEXT, BLANK = "big HH:MM:SS", "big HH:MM", "text", "blank"
 DEFAULT_SIZE = (80, 24)
 
 # Each glyph is a 10-row logical-pixel bitmap (twice the height that gets
@@ -208,17 +209,30 @@ def big_text(time_str, caps):
     return [GAP.join(g[i] for g in chars) for i in range(len(chars[0]))]
 
 
+def pick_tier(now, cols, rows, caps):
+    """The largest size tier that fits the pane, and its lines of text.
+
+    Tiers, largest first: big HH:MM:SS, big HH:MM, plain HH:MM:SS, blank.
+    """
+    for tier, lines in (
+        (BIG_FULL, big_text(now.strftime("%H:%M:%S"), caps)),
+        (BIG_SHORT, big_text(now.strftime("%H:%M"), caps)),
+        (TEXT, [now.strftime("%H:%M:%S")]),
+    ):
+        if len(lines[0]) <= cols and len(lines) <= rows:
+            return tier, lines
+    return BLANK, []
+
+
 def build_frame(now, cols, rows, caps):
     """One complete frame for the pane: cursor-home, then every cell."""
-    lines = big_text(now.strftime("%H:%M:%S"), caps)
-    top = max(0, (rows - len(lines)) // 2)
-    left = max(0, (cols - len(lines[0])) // 2)
-
+    _, lines = pick_tier(now, cols, rows, caps)
     cells = [[" "] * cols for _ in range(rows)]
-    for i, line in enumerate(lines):
-        for j, ch in enumerate(line):
-            if top + i < rows and left + j < cols:
-                cells[top + i][left + j] = ch
+    if lines:
+        top = (rows - len(lines)) // 2
+        left = (cols - len(lines[0])) // 2
+        for i, line in enumerate(lines):
+            cells[top + i][left : left + len(line)] = line
     return HOME + "\r\n".join("".join(row) for row in cells)
 
 
