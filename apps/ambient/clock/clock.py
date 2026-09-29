@@ -4,6 +4,7 @@
 import argparse
 import math
 import os
+import random
 import select
 import signal
 import sys
@@ -165,14 +166,6 @@ DIGIT_BITMAPS = {
 
 Caps = namedtuple("Caps", "color unicode")
 
-# A theme bundles a palette (color: the 256-color index for the digits, or
-# None for the terminal default), an optional effect, and a frame rate.
-# Themes only ever set the foreground.
-Theme = namedtuple("Theme", "name color effect fps")
-
-PLAIN = Theme("plain", color=None, effect=None, fps=1)
-THEMES = {t.name: t for t in (PLAIN,)}
-
 
 def detect_caps():
     """Read terminal capabilities once, at startup."""
@@ -239,21 +232,37 @@ def pick_tier(now, cols, rows, caps):
     return BLANK, []
 
 
-def build_frame(now, cols, rows, theme, caps):
+def build_frame(now, cols, rows, theme, caps, effect_state=None):
     """One complete frame for the pane: cursor-home, then every cell.
 
-    Pure: the time, pane size, theme and capabilities are all inputs.
+    Pure: the time, pane size, theme, capabilities and effect state are all
+    inputs. The effect shows only in the big HH:MM:SS tier, and never inside
+    the digits' bounding box plus a 1-cell margin.
     """
-    _, lines = pick_tier(now, cols, rows, caps)
+    tier, lines = pick_tier(now, cols, rows, caps)
+    effect = theme.effect if tier == BIG_FULL else None
+    t = now.timestamp()
     # Each cell is (character, 256-color index or None).
     cells = [[(" ", None)] * cols for _ in range(rows)]
-    if lines:
-        top = (rows - len(lines)) // 2
-        left = (cols - len(lines[0])) // 2
-        for i, line in enumerate(lines):
-            for j, ch in enumerate(line):
-                if ch != " ":
-                    cells[top + i][left + j] = (ch, theme.color)
+    if not lines:
+        return HOME + "\r\n".join(paint(row, caps) for row in cells)
+
+    top = (rows - len(lines)) // 2
+    left = (cols - len(lines[0])) // 2
+    bottom, right = top + len(lines) - 1, left + len(lines[0]) - 1
+
+    if effect and effect.glyphs and effect_state is not None:
+        for r, c, ch, color in effect.glyphs(effect_state, t, cols, rows, caps.unicode):
+            in_window = top - 1 <= r <= bottom + 1 and left - 1 <= c <= right + 1
+            if 0 <= r < rows and 0 <= c < cols and not in_window:
+                cells[r][c] = (ch, color)
+
+    for i, line in enumerate(lines):
+        for j, ch in enumerate(line):
+            if ch != " ":
+                c = left + j
+                color = effect.tint(t, c) if effect and effect.tint else theme.color
+                cells[top + i][c] = (ch, color)
     return HOME + "\r\n".join(paint(row, caps) for row in cells)
 
 
@@ -272,11 +281,73 @@ def paint(row, caps):
 
 
 def frame_rate(now, cols, rows, theme, caps):
-    """Frames per second: the theme's rate while its effect is showing, else 1."""
+    """Frames per second: the theme's rate while its effect is showing, else 1.
+
+    A color-only effect (one with no glyphs) doesn't show without color.
+    """
     tier, _ = pick_tier(now, cols, rows, caps)
-    if theme.effect is None or tier != BIG_FULL:
+    effect = theme.effect
+    if effect is None or tier != BIG_FULL or not (effect.glyphs or caps.color):
         return 1
     return theme.fps
+
+
+# An effect is the time-varying part of a theme, with three optional parts:
+# seed(cols, rows, rng) returns its state as plain data; glyphs(state, t,
+# cols, rows, unicode) yields (row, col, char, color) to draw around the
+# digits; tint(t, col) returns the color of a digit cell.
+Effect = namedtuple("Effect", "seed glyphs tint")
+
+# night: sparse stars that fade in and out, each reappearing somewhere new.
+# Tuning constants, chosen by eye.
+STAR_CELLS = 60  # one star per this many cells
+STAR_PERIOD = (4.0, 11.0)  # seconds per fade-in, fade-out and rest
+STAR_LIT = 0.6  # fraction of each period a star is visible
+STAR_GLYPHS = {True: ("·", "✦"), False: (".", "+", "*")}  # dim to bright
+STAR_COLORS = range(236, 256)  # grayscale ramp, dim to bright
+Star = namedtuple("Star", "salt period phase")
+
+
+def seed_stars(cols, rows, rng):
+    count = max(1, cols * rows // STAR_CELLS)
+    return [
+        Star(rng.getrandbits(32), rng.uniform(*STAR_PERIOD), rng.random())
+        for _ in range(count)
+    ]
+
+
+def star_glyphs(stars, t, cols, rows, unicode):
+    glyphs = STAR_GLYPHS[unicode]
+    for star in stars:
+        cycle, phase = divmod(t / star.period + star.phase, 1)
+        if phase >= STAR_LIT:
+            continue
+        brightness = math.sin(math.pi * phase / STAR_LIT)
+        place = random.Random(star.salt * 1_000_003 + int(cycle))
+        row, col = place.randrange(rows), place.randrange(cols)
+        yield (
+            row,
+            col,
+            glyphs[min(len(glyphs) - 1, int(brightness * len(glyphs)))],
+            STAR_COLORS[min(len(STAR_COLORS) - 1, int(brightness * len(STAR_COLORS)))],
+        )
+
+
+# A theme bundles a palette (color: the 256-color index for the digits, or
+# None for the terminal default, plus whatever colors its effect uses), an
+# optional effect, and a frame rate. Themes only ever set the foreground.
+Theme = namedtuple("Theme", "name color effect fps")
+
+PLAIN = Theme("plain", color=None, effect=None, fps=1)
+NIGHT = Theme("night", color=153, effect=Effect(seed_stars, star_glyphs, None), fps=4)
+THEMES = {t.name: t for t in (PLAIN, NIGHT)}
+
+
+def seed_effect(theme, cols, rows, rng):
+    """Fresh effect state for a pane of this size, or None if there's none."""
+    if theme.effect is None or theme.effect.seed is None:
+        return None
+    return theme.effect.seed(cols, rows, rng)
 
 
 def parse_args(argv):
@@ -358,12 +429,17 @@ def main():
     sys.stdout.write(HIDE_CURSOR)
     sys.stdout.flush()
 
+    rng = random.Random()
+    seeded_size = None
     try:
         while True:
             now = time.time()
             cols, rows = get_pane_size()
+            if resized or (cols, rows) != seeded_size:
+                effect_state = seed_effect(theme, cols, rows, rng)
+                seeded_size = (cols, rows)
             local = datetime.fromtimestamp(now)
-            frame = build_frame(local, cols, rows, theme, caps)
+            frame = build_frame(local, cols, rows, theme, caps, effect_state)
             if resized:
                 resized = False
                 frame = CLEAR + frame

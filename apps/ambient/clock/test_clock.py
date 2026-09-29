@@ -1,6 +1,7 @@
 """Tests for clock.py. Run: python3 -m unittest apps/ambient/clock/test_clock.py"""
 
 import os
+import random
 import re
 import sys
 import unittest
@@ -114,12 +115,96 @@ class ThemeFrameTest(unittest.TestCase):
                     self.assertIsNone(SGR.search(frame))
 
 
+def digit_window(cells):
+    """(top, left, bottom, right) of the drawn digits plus a 1-cell margin."""
+    points = [(r, c) for r, line in enumerate(cells) for c, ch in enumerate(line) if ch != " "]
+    rs = [r for r, _ in points]
+    cs = [c for _, c in points]
+    return (min(rs) - 1, min(cs) - 1, max(rs) + 1, max(cs) + 1)
+
+
+class GlyphEffectTest(unittest.TestCase):
+    """Effects that draw glyphs around the digits."""
+
+    THEMES = ("night",)
+    # A few seconds apart, and between frames, so effects are mid-motion.
+    TIMES = [datetime(2026, 9, 29, 20, 8, 0, 250000 * i) for i in range(4)] + [
+        datetime(2026, 9, 29, 20, 8, s) for s in range(1, 30, 3)
+    ]
+
+    def frame(self, name, now, cols, rows, caps=UNICODE, seed=1):
+        theme = clock.THEMES[name]
+        state = clock.seed_effect(theme, cols, rows, random.Random(seed))
+        return clock.build_frame(now, cols, rows, theme, caps, state)
+
+    def plain(self, now, cols, rows, caps=UNICODE):
+        return clock.build_frame(now, cols, rows, clock.PLAIN, caps)
+
+    def test_frame_covers_the_pane(self):
+        for name in self.THEMES:
+            for cols, rows in [(80, 24), (41, 5), (200, 60), (30, 7), (5, 2)]:
+                with self.subTest(theme=name, cols=cols, rows=rows):
+                    cells = grid(self.frame(name, NOON, cols, rows))
+                    self.assertEqual([len(line) for line in cells], [cols] * rows)
+
+    def test_digits_and_their_margin_are_never_drawn_over(self):
+        for name in self.THEMES:
+            for caps in (UNICODE, ASCII):
+                for cols, rows in [(80, 24), (43, 12), (120, 40)]:
+                    # Layout doesn't depend on the digits, so one window serves every time.
+                    top, left, bottom, right = digit_window(grid(self.plain(EDGE_TO_EDGE, cols, rows, caps)))
+                    for now in self.TIMES:
+                        plain = grid(self.plain(now, cols, rows, caps))
+                        for seed in range(5):
+                            with self.subTest(theme=name, unicode=caps.unicode, cols=cols, now=now, seed=seed):
+                                cells = grid(self.frame(name, now, cols, rows, caps, seed))
+                                for r in range(top, bottom + 1):
+                                    self.assertEqual(cells[r][left : right + 1], plain[r][left : right + 1])
+
+    def test_effect_draws_around_the_digits(self):
+        for name in self.THEMES:
+            with self.subTest(theme=name):
+                self.assertNotEqual(grid(self.frame(name, NOON, 80, 24)), grid(self.plain(NOON, 80, 24)))
+
+    def test_same_seed_gives_the_same_frame(self):
+        for name in self.THEMES:
+            with self.subTest(theme=name):
+                for now in self.TIMES:
+                    self.assertEqual(self.frame(name, now, 80, 24, seed=7), self.frame(name, now, 80, 24, seed=7))
+                self.assertNotEqual(self.frame(name, NOON, 80, 24, seed=7), self.frame(name, NOON, 80, 24, seed=8))
+
+    def test_no_effect_below_the_big_hhmmss_tier(self):
+        for name in self.THEMES:
+            for caps in (UNICODE, ASCII):
+                for cols, rows in [(40, 24), (80, 4), (25, 20), (7, 3)]:
+                    with self.subTest(theme=name, unicode=caps.unicode, cols=cols, rows=rows):
+                        for now in self.TIMES:
+                            self.assertEqual(
+                                grid(self.frame(name, now, cols, rows, caps)),
+                                grid(self.plain(now, cols, rows, caps)),
+                            )
+
+    def test_monochrome_without_color(self):
+        mono = clock.Caps(color=False, unicode=True)
+        for name in self.THEMES:
+            with self.subTest(theme=name):
+                frame = self.frame(name, NOON, 80, 24, mono)
+                self.assertIsNone(SGR.search(frame))
+                self.assertNotEqual(grid(frame), grid(self.plain(NOON, 80, 24, mono)))
+
+    def test_ascii_without_unicode(self):
+        for name in self.THEMES:
+            for now in self.TIMES:
+                with self.subTest(theme=name, now=now):
+                    self.assertTrue(self.frame(name, now, 80, 24, ASCII).isascii())
+
+
 class ArgumentParsingTest(unittest.TestCase):
     def test_no_flag_selects_plain(self):
         self.assertEqual(clock.parse_args([]).name, "plain")
 
     def test_each_valid_name_selects_its_theme(self):
-        for name in ("plain",):
+        for name in ("plain", "night"):
             with self.subTest(name=name):
                 self.assertEqual(clock.parse_args(["--theme", name]).name, name)
 
