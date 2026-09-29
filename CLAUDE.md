@@ -20,19 +20,22 @@ Read the contract for the class you are working in.
 - If an app needs a dependency, add PEP 723 inline metadata and run
   with uv
 - No packaging until an app outgrows a single file
+- One implementation branch per app, named `<class>-<app>`
+  (e.g. `ambient-clock`, `interactive-todo`). No version suffixes;
+  later versions of an app reuse its branch name
 
 ## ROADMAP.md
 
-Hand-owned backlog. The agent edits it at two points only:
+Backlog the agent keeps current. The agent may add, reword,
+reorder, move, or remove entries so the file reflects the real
+state of the project.
 
 - When a roadmap entry becomes a spec and issue: add
-  "In progress: #<issue>" under that entry. Change nothing else.
+  "In progress: #<issue>" under that entry.
 - When that app's branch merges: move the entry to "Built" and
   replace the in-progress line with "Shipped: #<pr>".
-
-Do not add, reword, reorder, or remove entries. Do not add
-ideas, even if they come up during a session. Mention them in
-chat instead.
+- When scope is decided or changes during a session, update the
+  affected entry in the same session.
 
 ## App READMEs
 

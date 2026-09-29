@@ -6,13 +6,20 @@ Difficulty is relative to the clock, which is the baseline.
 
 ## Built
 
-- **clock** (ambient) — big-digit wall clock
-
 ## Next
 
-- **clock v2** (ambient) — color themes, one background animation.
-  Difficulty: low. Scope trap: "animations" is unbounded. One
-  effect, ship it, add the second later.
+- **clock** (ambient) — big-digit wall clock. v1 steps 1–3
+  exist (frame loop, signal teardown, big digits); finishing v1
+  (resize, frame-boundary timing, size tiers, tty/NO_COLOR) is
+  folded into clock v2.
+
+- **clock v2** (ambient) — `--theme` flag selecting a palette plus
+  at most one effect: `plain` (default), `night` (starfield),
+  `rain`, `wave`. Difficulty: low. Scope trap: effects are
+  unbounded. Each effect is its own ticket, built last; the
+  branch may merge after `night` and move `rain`/`wave` to a
+  follow-up.
+  In progress: #1
 
 - **weather** (ambient) — current conditions for a location.
   Difficulty: low-moderate. Use a keyless API (Open-Meteo,
