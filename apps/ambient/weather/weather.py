@@ -576,8 +576,9 @@ def write_out(text):
 
 
 def teardown(caps):
+    reset = UNDIM if caps.color else ""
     try:
-        write_out(SHOW_CURSOR + LEAVE_ALT_SCREEN)
+        write_out(reset + SHOW_CURSOR + LEAVE_ALT_SCREEN)
     except OSError:
         pass
 
