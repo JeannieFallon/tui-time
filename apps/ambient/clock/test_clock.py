@@ -4,7 +4,9 @@ import os
 import re
 import sys
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
+from io import StringIO
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -31,13 +33,13 @@ class FrameBuildingTest(unittest.TestCase):
     def test_frame_covers_every_cell_of_the_pane(self):
         for cols, rows in [(80, 24), (120, 40), (41, 5), (30, 7), (10, 3), (1, 1)]:
             with self.subTest(cols=cols, rows=rows):
-                cells = grid(clock.build_frame(NOON, cols, rows, caps=UNICODE))
+                cells = grid(clock.build_frame(NOON, cols, rows, clock.PLAIN, UNICODE))
                 self.assertEqual(len(cells), rows)
                 for line in cells:
                     self.assertEqual(len(line), cols)
 
     def test_ascii_frame_is_pure_ascii(self):
-        frame = clock.build_frame(NOON, 80, 24, caps=ASCII)
+        frame = clock.build_frame(NOON, 80, 24, clock.PLAIN, ASCII)
         self.assertTrue(frame.isascii())
         self.assertIn("#", frame)
 
@@ -62,7 +64,7 @@ BLANK = (0, 0)
 
 class SizeTierTest(unittest.TestCase):
     def assertTier(self, caps, cols, rows, expected):
-        cells = grid(clock.build_frame(EDGE_TO_EDGE, cols, rows, caps=caps))
+        cells = grid(clock.build_frame(EDGE_TO_EDGE, cols, rows, clock.PLAIN, caps))
         self.assertEqual(drawn_box(cells), expected)
         if expected == TEXT:
             self.assertIn("20:08:00", "".join(cells))
@@ -94,12 +96,47 @@ class SizeTierTest(unittest.TestCase):
             for cols in range(1, 50):
                 for rows in range(1, 13):
                     with self.subTest(unicode=caps.unicode, cols=cols, rows=rows):
-                        cells = grid(clock.build_frame(EDGE_TO_EDGE, cols, rows, caps=caps))
+                        cells = grid(clock.build_frame(EDGE_TO_EDGE, cols, rows, clock.PLAIN, caps))
                         self.assertIn(drawn_box(cells), whole)
 
     def test_blank_tier_is_a_full_padded_frame(self):
         cells = self.assertTier(UNICODE, 7, 3, BLANK)
         self.assertEqual(cells, [" " * 7] * 3)
+
+
+class ThemeFrameTest(unittest.TestCase):
+    def test_no_color_escapes_when_color_is_disabled(self):
+        for theme in clock.THEMES.values():
+            for unicode in (True, False):
+                caps = clock.Caps(color=False, unicode=unicode)
+                with self.subTest(theme=theme.name, unicode=unicode):
+                    frame = clock.build_frame(NOON, 80, 24, theme, caps)
+                    self.assertIsNone(SGR.search(frame))
+
+
+class ArgumentParsingTest(unittest.TestCase):
+    def test_no_flag_selects_plain(self):
+        self.assertEqual(clock.parse_args([]).name, "plain")
+
+    def test_each_valid_name_selects_its_theme(self):
+        for name in ("plain",):
+            with self.subTest(name=name):
+                self.assertEqual(clock.parse_args(["--theme", name]).name, name)
+
+    def test_unknown_name_exits_listing_valid_names(self):
+        err = StringIO()
+        with redirect_stderr(err), self.assertRaises(SystemExit) as exit:
+            clock.parse_args(["--theme", "sparkle"])
+        self.assertEqual(exit.exception.code, 2)
+        for name in clock.THEMES:
+            self.assertIn(name, err.getvalue())
+
+    def test_help_lists_themes(self):
+        out = StringIO()
+        with redirect_stdout(out), self.assertRaises(SystemExit):
+            clock.parse_args(["--help"])
+        for name in clock.THEMES:
+            self.assertIn(name, out.getvalue())
 
 
 class FrameTimingTest(unittest.TestCase):

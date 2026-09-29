@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Big-digit wall clock for an idle tmux pane. Run: python3 apps/ambient/clock/clock.py"""
 
+import argparse
 import math
 import os
 import select
@@ -16,6 +17,7 @@ HIDE_CURSOR = "\033[?25l"
 SHOW_CURSOR = "\033[?25h"
 HOME = "\033[H"
 CLEAR = "\033[2J"
+DEFAULT_FG = "\033[39m"
 
 GAP = " "
 BIG_FULL, BIG_SHORT, TEXT, BLANK = "big HH:MM:SS", "big HH:MM", "text", "blank"
@@ -163,6 +165,14 @@ DIGIT_BITMAPS = {
 
 Caps = namedtuple("Caps", "color unicode")
 
+# A theme bundles a palette (color: the 256-color index for the digits, or
+# None for the terminal default), an optional effect, and a frame rate.
+# Themes only ever set the foreground.
+Theme = namedtuple("Theme", "name color effect fps")
+
+PLAIN = Theme("plain", color=None, effect=None, fps=1)
+THEMES = {t.name: t for t in (PLAIN,)}
+
 
 def detect_caps():
     """Read terminal capabilities once, at startup."""
@@ -229,16 +239,58 @@ def pick_tier(now, cols, rows, caps):
     return BLANK, []
 
 
-def build_frame(now, cols, rows, caps):
-    """One complete frame for the pane: cursor-home, then every cell."""
+def build_frame(now, cols, rows, theme, caps):
+    """One complete frame for the pane: cursor-home, then every cell.
+
+    Pure: the time, pane size, theme and capabilities are all inputs.
+    """
     _, lines = pick_tier(now, cols, rows, caps)
-    cells = [[" "] * cols for _ in range(rows)]
+    # Each cell is (character, 256-color index or None).
+    cells = [[(" ", None)] * cols for _ in range(rows)]
     if lines:
         top = (rows - len(lines)) // 2
         left = (cols - len(lines[0])) // 2
         for i, line in enumerate(lines):
-            cells[top + i][left : left + len(line)] = line
-    return HOME + "\r\n".join("".join(row) for row in cells)
+            for j, ch in enumerate(line):
+                if ch != " ":
+                    cells[top + i][left + j] = (ch, theme.color)
+    return HOME + "\r\n".join(paint(row, caps) for row in cells)
+
+
+def paint(row, caps):
+    """One row of cells as text, with foreground escapes only if color is on."""
+    out = []
+    current = None
+    for ch, color in row:
+        if caps.color and color != current:
+            out.append(DEFAULT_FG if color is None else f"\033[38;5;{color}m")
+            current = color
+        out.append(ch)
+    if current is not None:
+        out.append(DEFAULT_FG)
+    return "".join(out)
+
+
+def frame_rate(now, cols, rows, theme, caps):
+    """Frames per second: the theme's rate while its effect is showing, else 1."""
+    tier, _ = pick_tier(now, cols, rows, caps)
+    if theme.effect is None or tier != BIG_FULL:
+        return 1
+    return theme.fps
+
+
+def parse_args(argv):
+    """The theme selected on the command line."""
+    parser = argparse.ArgumentParser(
+        description="Big-digit wall clock for an idle pane.",
+    )
+    parser.add_argument(
+        "--theme",
+        choices=list(THEMES),
+        default=PLAIN.name,
+        help="palette and effect (default: %(default)s)",
+    )
+    return THEMES[parser.parse_args(argv).theme]
 
 
 def next_boundary(now, fps):
@@ -287,6 +339,7 @@ def handle_winch(signum, frame):
 
 def main():
     global resized
+    theme = parse_args(sys.argv[1:])
     if not sys.stdout.isatty():
         print(time.strftime("%H:%M:%S"))
         return
@@ -306,16 +359,17 @@ def main():
     sys.stdout.flush()
 
     try:
-        fps = 1
         while True:
             now = time.time()
             cols, rows = get_pane_size()
-            frame = build_frame(datetime.fromtimestamp(now), cols, rows, caps)
+            local = datetime.fromtimestamp(now)
+            frame = build_frame(local, cols, rows, theme, caps)
             if resized:
                 resized = False
                 frame = CLEAR + frame
             sys.stdout.write(frame)
             sys.stdout.flush()
+            fps = frame_rate(local, cols, rows, theme, caps)
             wait_until(next_boundary(now, fps), wake_fd)
     finally:
         teardown()
