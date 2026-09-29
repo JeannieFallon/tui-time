@@ -39,5 +39,31 @@ class FrameBuildingTest(unittest.TestCase):
         self.assertIn("#", frame)
 
 
+class FrameTimingTest(unittest.TestCase):
+    EPOCH = 1790000000.0  # a whole second
+
+    def test_boundary_is_in_the_future_and_within_one_period(self):
+        for fps in (1, 4, 8, 12):
+            period = 1 / fps
+            for offset in (0.0, 1e-9, 0.1, 0.25, 0.4999, 0.5, 0.75, 0.999999):
+                now = self.EPOCH + offset
+                with self.subTest(fps=fps, now=now):
+                    boundary = clock.next_boundary(now, fps)
+                    self.assertGreater(boundary, now)
+                    self.assertLessEqual(boundary - now, period + 1e-9)
+
+    def test_boundaries_fall_on_every_whole_second(self):
+        for fps in (1, 4, 12):
+            with self.subTest(fps=fps):
+                t = self.EPOCH - 0.001
+                seen = []
+                while t < self.EPOCH + 3:
+                    t = clock.next_boundary(t, fps)
+                    seen.append(t)
+                for second in (1, 2, 3):
+                    self.assertIn(self.EPOCH + second, seen)
+                self.assertEqual(len(seen), 3 * fps + 1)
+
+
 if __name__ == "__main__":
     unittest.main()

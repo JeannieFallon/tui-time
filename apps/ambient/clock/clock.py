@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Big-digit wall clock for an idle tmux pane. Run: python3 apps/ambient/clock/clock.py"""
 
+import math
 import os
+import select
 import signal
 import sys
 import time
@@ -220,6 +222,31 @@ def build_frame(now, cols, rows, caps):
     return HOME + "\r\n".join("".join(row) for row in cells)
 
 
+def next_boundary(now, fps):
+    """The first frame boundary strictly after now, at fps frames a second.
+
+    Boundaries are k / fps, so with an integer fps every whole second is one.
+    """
+    k = math.floor(now * fps) + 1
+    while k / fps <= now:
+        k += 1
+    return k / fps
+
+
+def wait_until(deadline, wake_fd):
+    """Sleep until deadline, or until a resize arrives."""
+    while not resized:
+        timeout = deadline - time.time()
+        if timeout <= 0:
+            return
+        ready, _, _ = select.select([wake_fd], [], [], timeout)
+        if ready:
+            try:
+                os.read(wake_fd, 4096)
+            except BlockingIOError:
+                pass
+
+
 def teardown():
     try:
         os.write(1, (SHOW_CURSOR + LEAVE_ALT_SCREEN).encode())
@@ -245,6 +272,10 @@ def main():
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGHUP, handle_signal)
     signal.signal(signal.SIGWINCH, handle_winch)
+    wake_fd, wake_write_fd = os.pipe()
+    os.set_blocking(wake_fd, False)
+    os.set_blocking(wake_write_fd, False)
+    signal.set_wakeup_fd(wake_write_fd)
 
     caps = Caps(color=True, unicode=unicode_ok())
     sys.stdout.write(ENTER_ALT_SCREEN)
@@ -252,15 +283,17 @@ def main():
     sys.stdout.flush()
 
     try:
+        fps = 1
         while True:
+            now = time.time()
             cols, rows = get_pane_size()
-            frame = build_frame(datetime.now(), cols, rows, caps)
+            frame = build_frame(datetime.fromtimestamp(now), cols, rows, caps)
             if resized:
                 resized = False
                 frame = CLEAR + frame
             sys.stdout.write(frame)
             sys.stdout.flush()
-            time.sleep(1)
+            wait_until(next_boundary(now, fps), wake_fd)
     finally:
         teardown()
 
