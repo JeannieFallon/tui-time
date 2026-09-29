@@ -290,6 +290,58 @@ class AgeLineTest(unittest.TestCase):
         self.assertEqual(self.age_line(state, 17 * 60), "updated 1m ago")
 
 
+MIN, HOUR = 60, 3600
+DIM = "\033[2m"
+
+
+class FreshnessTest(unittest.TestCase):
+    def test_fresh_under_30_minutes_stale_until_3_hours_then_expired(self):
+        reading = weather.Reading(1.0, "Clear", "C", T0)
+        cases = [
+            (0, weather.FRESH),
+            (30 * MIN - 0.001, weather.FRESH),
+            (30 * MIN, weather.STALE),
+            (3 * HOUR - 0.001, weather.STALE),
+            (3 * HOUR, weather.EXPIRED),
+        ]
+        for age, freshness in cases:
+            with self.subTest(age=age):
+                self.assertIs(weather.freshness(reading, T0 + age), freshness)
+
+    def test_stale_reading_is_dimmed_when_color_is_on(self):
+        self.assertNotIn(DIM, weather.build_frame(reading_state(), T0 + 30 * MIN - 1, 80, 24, UNICODE))
+        stale = weather.build_frame(reading_state(), T0 + 30 * MIN, 80, 24, UNICODE)
+        dimmed = [CSI.sub("", part.split("\033[22m")[0]) for part in stale.split(DIM)[1:]]
+        self.assertIn("Light rain · °C", dimmed)
+        self.assertTrue(any(set(part) & set("█▀▄") for part in dimmed))
+        self.assertNotIn("Lisbon, Lisbon District, PT", dimmed)
+
+    def test_stale_reading_is_not_styled_under_no_color(self):
+        caps = weather.Caps(color=False, unicode=True)
+        frame = weather.build_frame(reading_state(), T0 + 45 * MIN, 80, 24, caps)
+        self.assertIsNone(SGR.search(frame))
+        self.assertIn("updated 45m ago", text(frame))
+
+    def test_expired_reading_is_dropped_for_the_no_reading_layout(self):
+        state = weather.failed(reading_state(), "offline", at(2 * HOUR + 59.5 * MIN))  # retry 30s after expiry
+        now = T0 + 3 * HOUR
+        dropped = weather.expire(state, now)
+        self.assertIsNone(dropped.reading)
+        self.assertIs(weather.expire(state, now - 1), state)
+        no_reading = weather.failed(resolved_state(), "offline", at(2 * HOUR + 59.5 * MIN))
+        self.assertEqual(weather.build_frame(dropped, now, 80, 24, UNICODE), weather.build_frame(no_reading, now, 80, 24, UNICODE))
+        self.assertEqual(weather.build_frame(state, now, 80, 24, UNICODE), weather.build_frame(no_reading, now, 80, 24, UNICODE))
+        self.assertIn("Lisbon, Lisbon District, PT · offline · retry in 1m", text(weather.build_frame(dropped, now, 80, 24, UNICODE)))
+
+    def test_success_after_expiry_shows_a_fresh_reading(self):
+        state = weather.expire(weather.failed(reading_state(), "offline", at(3 * HOUR)), T0 + 3 * HOUR)
+        state = weather.fetched(state, weather.Reading(5.0, "Fog", "C", T0 + 4 * HOUR), at(4 * HOUR))
+        frame = weather.build_frame(state, T0 + 4 * HOUR, 80, 24, UNICODE)
+        self.assertNotIn(DIM, frame)
+        self.assertIn("Fog · °C", text(frame))
+        self.assertIn("updated just now", text(frame))
+
+
 class ScheduleTest(unittest.TestCase):
     def test_after_success_the_next_fetch_is_the_next_quarter_hour(self):
         reading = weather.Reading(1.0, "Clear", "C", T0)

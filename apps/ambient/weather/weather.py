@@ -24,6 +24,8 @@ HIDE_CURSOR = "\033[?25l"
 SHOW_CURSOR = "\033[?25h"
 HOME = "\033[H"
 CLEAR = "\033[2J"
+DIM = "\033[2m"
+UNDIM = "\033[22m"
 
 GAP = " "
 DEFAULT_SIZE = (80, 24)
@@ -374,6 +376,26 @@ def failed(state, cause, now):
     return state._replace(cause=cause, failures=state.failures + 1, next_fetch=now.mono + delay)
 
 
+STALE_AFTER = 2 * FETCH_INTERVAL  # seconds
+EXPIRED_AFTER = 3 * 60 * 60  # seconds
+FRESH, STALE, EXPIRED = "fresh", "stale", "expired"
+
+
+def freshness(reading, mono):
+    """FRESH, STALE or EXPIRED, by the Reading's age at mono."""
+    age = mono - reading.fetched_at
+    if age >= EXPIRED_AFTER:
+        return EXPIRED
+    return STALE if age >= STALE_AFTER else FRESH
+
+
+def expire(state, mono):
+    """The state without its Reading once that Reading is Expired."""
+    if state.reading is not None and freshness(state.reading, mono) is EXPIRED:
+        return state._replace(reading=None)
+    return state
+
+
 def is_due(state, mono):
     return mono >= state.next_fetch
 
@@ -395,26 +417,35 @@ def retry_text(state, mono, g):
 
 
 def layouts(state, mono, caps):
-    """Candidate layouts, largest first. Each is a list of lines."""
+    """Candidate layouts, largest first. Each is a list of (text, dim) lines;
+    dim marks the lines of a Stale Reading."""
     g = TEXT_GLYPHS[caps.unicode]
+    state = expire(state, mono)
     reading = state.reading
     if reading is not None:
+        stale = freshness(reading, mono) is STALE
         age = f"updated {age_text(mono - reading.fetched_at)}"
         if state.cause is not None:
             age += g["sep"] + state.cause
+        digits = big_text(whole_degrees(reading.temperature) + "°", caps)
         return [
-            big_text(whole_degrees(reading.temperature) + "°", caps)
-            + ["", f"{reading.condition}{g['sep']}{g['deg']}{reading.unit}", state.label, age]
+            [(line, stale) for line in digits]
+            + [
+                ("", False),
+                (f"{reading.condition}{g['sep']}{g['deg']}{reading.unit}", stale),
+                (state.label, False),
+                (age, False),
+            ]
         ]
     if state.cause is None:
-        return [[f"{state.label}{g['sep']}fetching{g['more']}"]]
-    return [[g["sep"].join((state.label, state.cause, retry_text(state, mono, g)))]]
+        return [[(f"{state.label}{g['sep']}fetching{g['more']}", False)]]
+    return [[(g["sep"].join((state.label, state.cause, retry_text(state, mono, g))), False)]]
 
 
 def pick_layout(state, mono, cols, rows, caps):
     """The largest layout that fits the pane, or [] for a blank pane."""
     for lines in layouts(state, mono, caps):
-        if max(len(line) for line in lines) <= cols and len(lines) <= rows:
+        if max(len(text) for text, _ in lines) <= cols and len(lines) <= rows:
             return lines
     return []
 
@@ -423,16 +454,21 @@ def build_frame(state, mono, cols, rows, caps):
     """One complete frame for the pane: cursor-home, then every cell.
 
     Pure: the state, the monotonic time, the pane size and the capabilities
-    are all inputs. The block of lines is centered as a whole, and each line
-    is centered on its own within it.
+    are all inputs. Freshness is judged at mono, so an Expired Reading is
+    never drawn even if it is still in the state. The block of lines is
+    centered as a whole, and each line is centered on its own within it.
     """
     lines = pick_layout(state, mono, cols, rows, caps)
-    cells = [[" "] * cols for _ in range(rows)]
     top = (rows - len(lines)) // 2
-    for i, line in enumerate(lines):
-        left = (cols - len(line)) // 2
-        cells[top + i][left : left + len(line)] = line
-    return HOME + "\r\n".join("".join(row) for row in cells)
+    out = []
+    for r in range(rows):
+        text, dim = lines[r - top] if 0 <= r - top < len(lines) else ("", False)
+        left = (cols - len(text)) // 2
+        right = cols - left - len(text)
+        if dim and caps.color and text.strip():
+            text = DIM + text + UNDIM
+        out.append(" " * left + text + " " * right)
+    return HOME + "\r\n".join(out)
 
 
 def get_pane_size():
@@ -576,6 +612,7 @@ def run_pane(args, caps, wake_fd):
         was_resized, resized = resized, False
         cols, rows = get_pane_size()
         mono = time.monotonic()
+        state = expire(state, mono)
         frame = build_frame(state, mono, cols, rows, caps)
         if was_resized:
             frame = CLEAR + frame
