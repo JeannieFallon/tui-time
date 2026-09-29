@@ -25,7 +25,7 @@ LEAVE_ALT_SCREEN = "\033[?1049l"
 HIDE_CURSOR = "\033[?25l"
 SHOW_CURSOR = "\033[?25h"
 HOME = "\033[H"
-CLEAR = "\033[2J"
+CLEAR_SCREEN = "\033[2J"
 DIM = "\033[2m"
 UNDIM = "\033[22m"
 DEFAULT_FG = "\033[39m"
@@ -671,8 +671,9 @@ def tiers(state, mono, caps):
     With a Reading: the Sky icon beside the big digits, with the Condition
     line, the detail lines, and the location and age lines; the same without
     the detail lines (these two only when the Reading has a Sky); the big
-    digits alone, with the Condition, location and age lines; the temperature and Condition on one line, with the
-    age under it; that line alone; the temperature alone. Without one: the
+    digits alone, with the Condition, location and age lines; the
+    temperature and Condition on one line, with the age under it; that line
+    alone; the temperature alone. Without one: the
     label, cause and retry countdown on one line; the cause alone; "!".
     While fetching: the label and "fetching…"; "fetching…" alone.
     """
@@ -1081,7 +1082,7 @@ def run_pane(args, caps, wake_fd):
             seeded_for = (effect, cols, rows)
         frame = build_frame(state, mono, cols, rows, caps, effect_state)
         if was_resized:
-            frame = CLEAR + frame
+            frame = CLEAR_SCREEN + frame
         try:
             write_out(frame)
         except OSError:

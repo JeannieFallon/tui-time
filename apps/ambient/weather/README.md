@@ -228,7 +228,7 @@ icon. The icon dims with the rest of a Stale Reading.
 
 Storm has no lightning. An Effect shows only while the Reading is
 Fresh, and only in the full and big-with-icon layouts. It draws in the
-pane background and never inside the bounding box of the text and icon
+empty cells of the pane, never inside the bounding box of the text and icon
 plus a 1-cell margin, so a pane only just big enough for its layout
 shows little or no Effect. The drops and flakes are placed at random
 when an Effect starts showing, and again on each resize.
@@ -242,7 +242,7 @@ clock, so the frame rate doesn't change them.
 The styling is the icon and Effect colors, and the dim on a Stale
 Reading. When `NO_COLOR` is set to a non-empty value, the app emits no
 SGR escapes. The icon is drawn uncolored and the Effect still
-animates, uncolored. A Stale Reading is then drawn like a fresh one,
+moves, uncolored. A Stale Reading is then drawn like a fresh one,
 and only the age line and the stopped Effect show its age.
 
 When stdout's encoding can't encode the block characters, `°`, `·`
