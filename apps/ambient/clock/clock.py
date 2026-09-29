@@ -164,6 +164,11 @@ DIGIT_BITMAPS = {
 Caps = namedtuple("Caps", "color unicode")
 
 
+def detect_caps():
+    """Read terminal capabilities once, at startup."""
+    return Caps(color=not os.environ.get("NO_COLOR"), unicode=unicode_ok())
+
+
 def unicode_ok():
     try:
         "█▀▄".encode(sys.stdout.encoding or "ascii")
@@ -282,6 +287,10 @@ def handle_winch(signum, frame):
 
 def main():
     global resized
+    if not sys.stdout.isatty():
+        print(time.strftime("%H:%M:%S"))
+        return
+
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGHUP, handle_signal)
@@ -291,7 +300,7 @@ def main():
     os.set_blocking(wake_write_fd, False)
     signal.set_wakeup_fd(wake_write_fd)
 
-    caps = Caps(color=True, unicode=unicode_ok())
+    caps = detect_caps()
     sys.stdout.write(ENTER_ALT_SCREEN)
     sys.stdout.write(HIDE_CURSOR)
     sys.stdout.flush()
