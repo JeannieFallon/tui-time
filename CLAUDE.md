@@ -21,6 +21,19 @@ Read the contract for the class you are working in.
   with uv
 - No packaging until an app outgrows a single file
 
+## ROADMAP.md
+
+Hand-owned backlog. The agent edits it at two points only:
+
+- When a roadmap entry becomes a spec and issue: add
+  "In progress: #<issue>" under that entry. Change nothing else.
+- When that app's branch merges: move the entry to "Built" and
+  replace the in-progress line with "Shipped: #<pr>".
+
+Do not add, reword, reorder, or remove entries. Do not add
+ideas, even if they come up during a session. Mention them in
+chat instead.
+
 ## App READMEs
 
 Each app has a README.md written as the last build step, not before.

@@ -65,6 +65,16 @@ Interactive:
   survive, and completion needs a terminal bell or a
   notify-send.
 
+## Ideas, unscoped
+
+- **Inference-backed apps.** TUI apps that call an inference
+  endpoint, either a frontier API or a self-hosted server
+  (vLLM, Ollama). Not scoped. Open questions: what an ambient
+  app does with a non-deterministic, latency-variable,
+  sometimes-failing backend; whether the interesting apps here
+  are ambient or interactive; whether local and remote are one
+  app with a config switch or two apps.
+
 ## Shelved
 
 - **ssh-chat** — chat between developer VMs over SSH. Shelved:
