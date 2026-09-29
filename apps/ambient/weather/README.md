@@ -147,7 +147,10 @@ then drawn like a fresh one, and only the age line shows its age.
 When stdout's encoding can't encode the block characters, `°`, `·`
 and `…` (for example `PYTHONIOENCODING=ascii`), the big glyphs are
 drawn with `#` at 10 rows tall, the degree sign is left out of text
-(`12C Light rain`), `·` becomes `-` and `…` becomes `...`.
+(`12C Light rain`), `·` becomes `-` and `…` becomes `...`. Place
+names lose their accents (`São Paulo` becomes `Sao Paulo`), in the
+pane and in the non-tty line, and any other non-ASCII character
+becomes `?`.
 
 ## Not a terminal
 
@@ -170,7 +173,7 @@ place name with no match exits 2, as above. It doesn't retry.
   specific name.
 - Current temperature and Condition only. No feels-like, high/low,
   wind, humidity or precipitation.
-- No on-disk cache. A restart starts with no Reading.
+- Readings are not saved to disk. A restart starts with no Reading.
 - A fetch blocks the draw loop. A resize or the next second's frame can
   wait for up to the 3-second socket timeout. DNS lookups are not
   covered by that timeout and can take longer.

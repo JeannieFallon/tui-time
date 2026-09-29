@@ -13,6 +13,7 @@ import select
 import signal
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -123,9 +124,12 @@ def forecast_result(outcome, unit, fetched_at):
         code = current["weather_code"]
         if not isinstance(temperature, (int, float)) or isinstance(temperature, bool):
             raise TypeError(temperature)
+        if not math.isfinite(temperature):
+            raise ValueError(temperature)
+        condition = CONDITIONS.get(code, UNKNOWN_CONDITION)
     except (ValueError, TypeError, KeyError):
         return Failure("bad response")
-    return Reading(float(temperature), CONDITIONS.get(code, UNKNOWN_CONDITION), unit, fetched_at)
+    return Reading(float(temperature), condition, unit, fetched_at)
 
 
 # Each glyph is a 10-row logical-pixel bitmap (twice the height that gets
@@ -323,6 +327,18 @@ def pack_rows(rows):
 BLOCK_GLYPHS = {ch: pack_rows(rows) for ch, rows in DIGIT_BITMAPS.items()}
 
 
+def ascii_text(text):
+    """text with accents stripped and anything else non-ASCII as "?"."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return stripped.encode("ascii", "replace").decode("ascii")
+
+
+def shown_label(label, unicode):
+    """The location label as drawn: as-is, or made ASCII for the fallback."""
+    return label if unicode else ascii_text(label)
+
+
 def big_text(chars, caps):
     """Lines of chars drawn in big glyphs."""
     glyphs = BLOCK_GLYPHS if caps.unicode else DIGIT_BITMAPS
@@ -416,8 +432,8 @@ def retry_text(state, mono, g):
     return f"retry in {math.ceil(remaining / 60)}m"
 
 
-def layouts(state, mono, caps):
-    """Candidate layouts, largest first. Each is a list of (text, dim) lines;
+def tiers(state, mono, caps):
+    """Size tiers, largest first. Each is a list of (text, dim) lines;
     dim marks the lines of a Stale Reading.
 
     With a Reading: big digits with the Condition, location and age lines;
@@ -428,6 +444,7 @@ def layouts(state, mono, caps):
     """
     g = TEXT_GLYPHS[caps.unicode]
     state = expire(state, mono)
+    label = shown_label(state.label, caps.unicode)
     reading = state.reading
     if reading is not None:
         stale = freshness(reading, mono) is STALE
@@ -440,20 +457,21 @@ def layouts(state, mono, caps):
         big = [(line, stale) for line in big_text(degrees + "°", caps)] + [
             ("", False),
             (f"{reading.condition}{g['sep']}{g['deg']}{reading.unit}", stale),
-            (state.label, False),
+            (label, False),
             (age, False),
         ]
         return [big, [compact, (age, False)], [compact], [(temperature, stale)]]
     if state.cause is None:
         fetching = f"fetching{g['more']}"
-        return [[(state.label + g["sep"] + fetching, False)], [(fetching, False)]]
-    full = g["sep"].join((state.label, state.cause, retry_text(state, mono, g)))
+        return [[(label + g["sep"] + fetching, False)], [(fetching, False)]]
+    full = g["sep"].join((label, state.cause, retry_text(state, mono, g)))
     return [[(full, False)], [(state.cause, False)], [("!", False)]]
 
 
-def pick_layout(state, mono, cols, rows, caps):
-    """The largest layout that fits the pane, or [] for a blank pane."""
-    for lines in layouts(state, mono, caps):
+def pick_tier(state, mono, cols, rows, caps):
+    """The lines of the largest size tier that fits the pane, or [] for a
+    blank pane."""
+    for lines in tiers(state, mono, caps):
         if max(len(text) for text, _ in lines) <= cols and len(lines) <= rows:
             return lines
     return []
@@ -467,7 +485,7 @@ def build_frame(state, mono, cols, rows, caps):
     never drawn even if it is still in the state. The block of lines is
     centered as a whole, and each line is centered on its own within it.
     """
-    lines = pick_layout(state, mono, cols, rows, caps)
+    lines = pick_tier(state, mono, cols, rows, caps)
     top = (rows - len(lines)) // 2
     out = []
     for r in range(rows):
@@ -613,7 +631,7 @@ def step(state, args, get):
 def one_line(label, reading, unicode):
     """The Reading as one plain line, for when stdout isn't a tty."""
     deg = TEXT_GLYPHS[unicode]["deg"]
-    return f"{label} {whole_degrees(reading.temperature)}{deg}{reading.unit} {reading.condition}"
+    return f"{shown_label(label, unicode)} {whole_degrees(reading.temperature)}{deg}{reading.unit} {reading.condition}"
 
 
 def run_plain(args, get, unicode, out):

@@ -89,6 +89,9 @@ class ForecastResultTest(unittest.TestCase):
             b'{"current": {"temperature_2m": 12.0}}',
             b'{"current": {"temperature_2m": null, "weather_code": 3}}',
             b'{"current": {"temperature_2m": "warm", "weather_code": 3}}',
+            b'{"current": {"temperature_2m": NaN, "weather_code": 3}}',
+            b'{"current": {"temperature_2m": Infinity, "weather_code": 3}}',
+            b'{"current": {"temperature_2m": 12.0, "weather_code": [61]}}',
         ):
             with self.subTest(body=body):
                 self.assertEqual(weather.forecast_result(body, "C", 0.0), weather.Failure("bad response"))
@@ -399,6 +402,16 @@ class SizeTierTest(unittest.TestCase):
                 with self.subTest(unicode=caps.unicode, state=state.label):
                     self.assertEqual(len(seen), count, seen)
 
+    def test_non_ascii_place_names_are_transliterated_in_ascii_frames(self):
+        state = weather.initial_state("São Paulo")
+        self.assertIn("Sao Paulo - fetching...", text(weather.build_frame(state, T0, 80, 24, ASCII)))
+        zurich = weather.resolved(weather.initial_state("zurich"), weather.Place("Zürich, Zürich, CH", 47.4, 8.5), NOW0)
+        zurich = weather.fetched(zurich, weather.Reading(9.0, "Fog", "C", T0), NOW0)
+        frame = weather.build_frame(zurich, T0, 80, 24, ASCII)
+        self.assertTrue(frame.isascii())
+        self.assertIn("Zurich, Zurich, CH", text(frame))
+        self.assertIn("Zürich, Zürich, CH", text(weather.build_frame(zurich, T0, 80, 24, UNICODE)))
+
     def test_ascii_frames_are_pure_ascii(self):
         for state, mono, _ in self.states():
             for cols, rows in [(80, 24), (30, 14), (20, 2), (15, 1), (4, 1), (1, 1)]:
@@ -538,6 +551,11 @@ class PlainOutputTest(unittest.TestCase):
     def test_ascii_line_drops_the_degree_sign(self):
         _, out, _ = self.run_plain(FakeHttp(), unicode=False)
         self.assertEqual(out, "Lisbon, Lisbon District, PT 12C Light rain\n")
+
+    def test_ascii_line_transliterates_the_place_name(self):
+        body = json.dumps({"results": [{"name": "São Paulo", "admin1": "São Paulo", "country_code": "BR", "latitude": -23.5, "longitude": -46.6}]})
+        _, out, _ = self.run_plain(FakeHttp(geocode=body.encode()), ["Sao", "Paulo"], unicode=False)
+        self.assertEqual(out, "Sao Paulo, Sao Paulo, BR 12C Light rain\n")
 
     def test_failures_exit_1_with_the_cause_on_stderr(self):
         cases = [
