@@ -46,30 +46,30 @@ A theme sets the digit color, and some add an effect. Colors come
 from the 256-color palette and apply only to the foreground. No theme
 paints the background.
 
-- **plain**: the terminal's default foreground, no effect, redrawn once
-  a second.
+- **plain**: the terminal's default foreground, no effect, one frame a
+  second.
 - **night**: light blue digits. Sparse stars fade in and out on a
   grayscale ramp around the clock, and each star reappears somewhere
   new after it fades. There is about one star per 60 cells, and at any
-  moment roughly 60% of them are lit. Redrawn 4 times a second.
+  moment roughly 60% of them are lit. 4 frames a second.
 - **rain**: pale blue digits. About a third of the columns carry a drop
   that falls at 2–6 rows a second, a bright lead glyph trailing a
-  dimmer tail. Redrawn 8 times a second.
+  dimmer tail. 8 frames a second.
 - **wave**: a cyan-to-magenta gradient moves left to right across the
-  digits. It draws nothing outside them. Redrawn 8 times a second.
+  digits. It draws nothing outside them. 8 frames a second.
 
 Effects show only in the big `HH:MM:SS` tier. They never draw inside
 the digits' bounding box or the 1-cell margin around it. In the
 smaller tiers every theme draws only its digits, in its static color
-(cyan for `wave`), once a second. A resize restarts the effect with
+(cyan for `wave`), at one frame a second. A resize restarts the effect with
 new random positions.
 
 ### NO_COLOR
 
 When `NO_COLOR` is set to a non-empty value, the clock emits no color
-escapes under any theme. `night` and `rain` keep animating in
+escapes under any theme. `night` and `rain` keep their effect in
 monochrome, their fades shown only by the choice of glyph. `wave`
-draws exactly what `plain` draws, once a second.
+draws exactly what `plain` draws, at one frame a second.
 
 ### ASCII fallback
 

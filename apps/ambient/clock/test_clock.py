@@ -115,7 +115,7 @@ class ThemeFrameTest(unittest.TestCase):
                     self.assertIsNone(SGR.search(frame))
 
 
-def digit_window(cells):
+def digit_box(cells):
     """(top, left, bottom, right) of the drawn digits plus a 1-cell margin."""
     points = [(r, c) for r, line in enumerate(cells) for c, ch in enumerate(line) if ch != " "]
     rs = [r for r, _ in points]
@@ -152,7 +152,7 @@ class GlyphEffectTest(unittest.TestCase):
             for caps in (UNICODE, ASCII):
                 for cols, rows in [(80, 24), (43, 12), (120, 40)]:
                     # Layout doesn't depend on the digits, so one window serves every time.
-                    top, left, bottom, right = digit_window(grid(self.plain(EDGE_TO_EDGE, cols, rows, caps)))
+                    top, left, bottom, right = digit_box(grid(self.plain(EDGE_TO_EDGE, cols, rows, caps)))
                     for now in self.TIMES:
                         plain = grid(self.plain(now, cols, rows, caps))
                         for seed in range(5):
@@ -275,7 +275,7 @@ class FrameTimingTest(unittest.TestCase):
                     self.assertLessEqual(boundary - now, period + 1e-9)
 
     def test_boundaries_fall_on_every_whole_second(self):
-        for fps in (1, 4, 12):
+        for fps in (1, 4, 8, 12):
             with self.subTest(fps=fps):
                 t = self.EPOCH - 0.001
                 seen = []

@@ -253,8 +253,8 @@ def build_frame(now, cols, rows, theme, caps, effect_state=None):
 
     if effect and effect.glyphs and effect_state is not None:
         for r, c, ch, color in effect.glyphs(effect_state, t, cols, rows, caps.unicode):
-            in_window = top - 1 <= r <= bottom + 1 and left - 1 <= c <= right + 1
-            if 0 <= r < rows and 0 <= c < cols and not in_window:
+            in_margin = top - 1 <= r <= bottom + 1 and left - 1 <= c <= right + 1
+            if 0 <= r < rows and 0 <= c < cols and not in_margin:
                 cells[r][c] = (ch, color)
 
     for i, line in enumerate(lines):
@@ -491,17 +491,22 @@ def main():
     seeded_size = None
     try:
         while True:
+            # Take the flag before reading the size, so a resize that lands
+            # mid-frame is still seen, and cleared for, next time round.
+            was_resized, resized = resized, False
             now = time.time()
             cols, rows = get_pane_size()
-            if resized or (cols, rows) != seeded_size:
+            if was_resized or (cols, rows) != seeded_size:
                 effect_state = seed_effect(theme, cols, rows, rng)
                 seeded_size = (cols, rows)
             local = datetime.fromtimestamp(now)
             frame = build_frame(local, cols, rows, theme, caps, effect_state)
-            if resized:
-                resized = False
+            if was_resized:
                 frame = CLEAR + frame
-            write_out(frame)
+            try:
+                write_out(frame)
+            except OSError:
+                return  # the pty is gone
             fps = frame_rate(local, cols, rows, theme, caps)
             wait_until(next_boundary(now, fps), wake_fd)
     finally:
