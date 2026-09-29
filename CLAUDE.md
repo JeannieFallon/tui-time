@@ -20,9 +20,14 @@ Read the contract for the class you are working in.
 - If an app needs a dependency, add PEP 723 inline metadata and run
   with uv
 - No packaging until an app outgrows a single file
-- One implementation branch per app, named `<class>-<app>`
-  (e.g. `ambient-clock`, `interactive-todo`). No version suffixes;
-  later versions of an app reuse its branch name
+- One branch and one PR per app version, named
+  `<class>-<app>-v<N>` (e.g. `ambient-weather-v2`), cut fresh from
+  `main`. Branches from before this rule have no suffix and are
+  version 1 (`ambient-clock`, `ambient-weather`)
+- The agent commits locally only; the user pushes and opens the
+  PR. The PR body closes the version's spec issue and every
+  ticket under it (`Closes #20`, `Closes #21`, …). GitHub deletes
+  the branch on merge
 
 ## ROADMAP.md
 
