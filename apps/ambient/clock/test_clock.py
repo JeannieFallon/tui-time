@@ -199,12 +199,49 @@ class GlyphEffectTest(unittest.TestCase):
                     self.assertTrue(self.frame(name, now, 80, 24, ASCII).isascii())
 
 
+FG = re.compile(r"\033\[38;5;(\d+)m")
+
+
+class WaveTest(unittest.TestCase):
+    SIZES = [(80, 24), (41, 5), (30, 7), (10, 3)]
+
+    def wave(self, now, cols, rows, caps):
+        return clock.build_frame(now, cols, rows, clock.THEMES["wave"], caps)
+
+    def test_without_color_wave_is_plain(self):
+        for unicode in (True, False):
+            caps = clock.Caps(color=False, unicode=unicode)
+            for cols, rows in self.SIZES:
+                with self.subTest(unicode=unicode, cols=cols, rows=rows):
+                    self.assertEqual(
+                        self.wave(NOON, cols, rows, caps),
+                        clock.build_frame(NOON, cols, rows, clock.PLAIN, caps),
+                    )
+
+    def test_draws_nothing_outside_the_digits(self):
+        for cols, rows in self.SIZES:
+            with self.subTest(cols=cols, rows=rows):
+                self.assertEqual(
+                    grid(self.wave(NOON, cols, rows, UNICODE)),
+                    grid(clock.build_frame(NOON, cols, rows, clock.PLAIN, UNICODE)),
+                )
+
+    def test_digit_cells_differ_in_color(self):
+        self.assertGreater(len(set(FG.findall(self.wave(NOON, 80, 24, UNICODE)))), 1)
+
+    def test_gradient_moves_over_time(self):
+        later = NOON.replace(microsecond=500000)
+        now_frame, later_frame = self.wave(NOON, 80, 24, UNICODE), self.wave(later, 80, 24, UNICODE)
+        self.assertEqual(grid(now_frame), grid(later_frame))
+        self.assertNotEqual(FG.findall(now_frame), FG.findall(later_frame))
+
+
 class ArgumentParsingTest(unittest.TestCase):
     def test_no_flag_selects_plain(self):
         self.assertEqual(clock.parse_args([]).name, "plain")
 
     def test_each_valid_name_selects_its_theme(self):
-        for name in ("plain", "night", "rain"):
+        for name in ("plain", "night", "rain", "wave"):
             with self.subTest(name=name):
                 self.assertEqual(clock.parse_args(["--theme", name]).name, name)
 

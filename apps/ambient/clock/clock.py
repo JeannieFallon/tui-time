@@ -373,6 +373,17 @@ def rain_glyphs(columns, t, cols, rows, unicode):
             )
 
 
+# wave: a color gradient moving horizontally across the digits. It draws no
+# glyphs of its own. Tuning constants, chosen by eye.
+WAVE_COLORS = (51, 45, 39, 33, 63, 99, 135, 171, 207, 171, 135, 99, 63, 33, 39, 45)
+WAVE_WIDTH = 3  # columns per color
+WAVE_SPEED = 6.0  # columns a second, left to right
+
+
+def wave_tint(t, col):
+    return WAVE_COLORS[int((col - t * WAVE_SPEED) // WAVE_WIDTH) % len(WAVE_COLORS)]
+
+
 # A theme bundles a palette (color: the 256-color index for the digits, or
 # None for the terminal default, plus whatever colors its effect uses), an
 # optional effect, and a frame rate. Themes only ever set the foreground.
@@ -381,7 +392,8 @@ Theme = namedtuple("Theme", "name color effect fps")
 PLAIN = Theme("plain", color=None, effect=None, fps=1)
 NIGHT = Theme("night", color=153, effect=Effect(seed_stars, star_glyphs, None), fps=4)
 RAIN = Theme("rain", color=110, effect=Effect(seed_rain, rain_glyphs, None), fps=8)
-THEMES = {t.name: t for t in (PLAIN, NIGHT, RAIN)}
+WAVE = Theme("wave", color=45, effect=Effect(None, None, wave_tint), fps=8)
+THEMES = {t.name: t for t in (PLAIN, NIGHT, RAIN, WAVE)}
 
 
 def seed_effect(theme, cols, rows, rng):
