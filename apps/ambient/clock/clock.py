@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Big-digit wall clock for an idle tmux pane. Run: python3 apps/clock/clock.py"""
+"""Big-digit wall clock for an idle tmux pane. Run: python3 apps/ambient/clock/clock.py"""
 
 import os
 import signal
 import sys
 import time
+from collections import namedtuple
+from datetime import datetime
 
 ENTER_ALT_SCREEN = "\033[?1049h"
 LEAVE_ALT_SCREEN = "\033[?1049l"
 HIDE_CURSOR = "\033[?25l"
 SHOW_CURSOR = "\033[?25h"
+HOME = "\033[H"
+CLEAR = "\033[2J"
 
 GAP = " "
 DEFAULT_SIZE = (80, 24)
@@ -154,6 +158,9 @@ DIGIT_BITMAPS = {
 }
 
 
+Caps = namedtuple("Caps", "color unicode")
+
+
 def unicode_ok():
     try:
         "█▀▄".encode(sys.stdout.encoding or "ascii")
@@ -181,12 +188,7 @@ def pack_rows(rows):
     return tuple(packed)
 
 
-if unicode_ok():
-    GLYPHS = {ch: pack_rows(rows) for ch, rows in DIGIT_BITMAPS.items()}
-else:
-    GLYPHS = DIGIT_BITMAPS
-
-GLYPH_HEIGHT = len(next(iter(GLYPHS.values())))
+BLOCK_GLYPHS = {ch: pack_rows(rows) for ch, rows in DIGIT_BITMAPS.items()}
 
 
 def get_pane_size():
@@ -197,17 +199,25 @@ def get_pane_size():
         return DEFAULT_SIZE
 
 
-def render_frame(time_str, cols, rows):
-    glyphs = [GLYPHS[ch] for ch in time_str]
-    total_w = sum(len(g[0]) for g in glyphs) + (len(glyphs) - 1)
-    row_offset = max(0, (rows - GLYPH_HEIGHT) // 2)
-    col_offset = max(0, (cols - total_w) // 2)
+def big_text(time_str, caps):
+    """Lines of time_str drawn in big digits."""
+    glyphs = BLOCK_GLYPHS if caps.unicode else DIGIT_BITMAPS
+    chars = [glyphs[ch] for ch in time_str]
+    return [GAP.join(g[i] for g in chars) for i in range(len(chars[0]))]
 
-    lines = []
-    for i in range(GLYPH_HEIGHT):
-        row_text = GAP.join(g[i] for g in glyphs)
-        lines.append(f"\033[{row_offset + 1 + i};{col_offset + 1}H{row_text}")
-    return "".join(lines)
+
+def build_frame(now, cols, rows, caps):
+    """One complete frame for the pane: cursor-home, then every cell."""
+    lines = big_text(now.strftime("%H:%M:%S"), caps)
+    top = max(0, (rows - len(lines)) // 2)
+    left = max(0, (cols - len(lines[0])) // 2)
+
+    cells = [[" "] * cols for _ in range(rows)]
+    for i, line in enumerate(lines):
+        for j, ch in enumerate(line):
+            if top + i < rows and left + j < cols:
+                cells[top + i][left + j] = ch
+    return HOME + "\r\n".join("".join(row) for row in cells)
 
 
 def teardown():
@@ -217,24 +227,38 @@ def teardown():
         pass
 
 
+resized = False
+
+
 def handle_signal(signum, frame):
     sys.exit(0)
 
 
+def handle_winch(signum, frame):
+    global resized
+    resized = True
+
+
 def main():
+    global resized
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGHUP, handle_signal)
+    signal.signal(signal.SIGWINCH, handle_winch)
 
+    caps = Caps(color=True, unicode=unicode_ok())
     sys.stdout.write(ENTER_ALT_SCREEN)
     sys.stdout.write(HIDE_CURSOR)
     sys.stdout.flush()
 
     try:
         while True:
-            now = time.strftime("%H:%M:%S")
             cols, rows = get_pane_size()
-            sys.stdout.write(render_frame(now, cols, rows))
+            frame = build_frame(datetime.now(), cols, rows, caps)
+            if resized:
+                resized = False
+                frame = CLEAR + frame
+            sys.stdout.write(frame)
             sys.stdout.flush()
             time.sleep(1)
     finally:
