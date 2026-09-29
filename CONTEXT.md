@@ -25,12 +25,16 @@ One complete image of the pane, written in a single write.
 _Avoid_: Draw, refresh
 
 **Frame rate**:
-How many frames per second an app produces. In the clock, the theme decides it.
+How many frames per second an app produces. It is higher while an effect is showing: in the clock the theme sets the rate, in weather the effect does.
 _Avoid_: Tick, refresh rate
 
 **Size tier**:
 One of an app's ordered layouts, chosen by the largest one that fits the current pane.
 _Avoid_: Mode, breakpoint, fallback
+
+**Effect**:
+The time-varying, decorative part of a frame, such as starfield or rain. In the clock the theme picks it; in weather the sky does.
+_Avoid_: Animation, background
 
 ### Clock
 
@@ -42,19 +46,19 @@ _Avoid_: Skin, style, color scheme
 The fixed set of colors a theme uses.
 _Avoid_: Theme (when only colors are meant)
 
-**Effect**:
-The time-varying part of a theme, such as starfield, rain, or wave.
-_Avoid_: Animation, background
-
 ### Weather
 
 **Reading**:
-One successful fetch of current conditions, together with when it was fetched.
+One successful fetch of current conditions and today's forecast, together with when it was fetched. It goes stale and expires as a whole.
 _Avoid_: Cache, snapshot, data
 
 **Condition**:
 The short description of the weather in a reading, such as "Light rain".
 _Avoid_: Summary, status
+
+**Sky**:
+The coarse group a condition falls into: Clear, Cloudy, Rain, Snow, or Storm. Many conditions share one sky.
+_Avoid_: Condition type, category, icon (for the group itself)
 
 **Fetch interval**:
 How often the app asks for a new reading when fetches are succeeding. Distinct from frame rate.
