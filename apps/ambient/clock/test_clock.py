@@ -57,35 +57,35 @@ def drawn_box(cells):
 
 # Drawn size of each tier. Big digits are 5 wide, colons 2, with 1-cell gaps;
 # block glyphs are 5 rows tall, ASCII glyphs 10.
-BIG_FULL = {True: (41, 5), False: (41, 10)}
-BIG_SHORT = {True: (26, 5), False: (26, 10)}
-TEXT = (8, 1)
-BLANK = (0, 0)
+BIG_FULL_SIZE = {True: (41, 5), False: (41, 10)}
+BIG_SHORT_SIZE = {True: (26, 5), False: (26, 10)}
+TEXT_SIZE = (8, 1)
+BLANK_SIZE = (0, 0)
 
 
 class SizeTierTest(unittest.TestCase):
     def assertTier(self, caps, cols, rows, expected):
         cells = grid(clock.build_frame(EDGE_TO_EDGE, cols, rows, clock.PLAIN, caps))
         self.assertEqual(drawn_box(cells), expected)
-        if expected == TEXT:
+        if expected == TEXT_SIZE:
             self.assertIn("20:08:00", "".join(cells))
         return cells
 
     def test_largest_tier_that_fits_is_drawn(self):
         cases = [
-            (UNICODE, 41, 5, BIG_FULL[True]),
-            (UNICODE, 40, 5, BIG_SHORT[True]),
-            (UNICODE, 41, 4, TEXT),
-            (UNICODE, 26, 5, BIG_SHORT[True]),
-            (UNICODE, 25, 5, TEXT),
-            (UNICODE, 8, 1, TEXT),
-            (UNICODE, 7, 1, BLANK),
-            (UNICODE, 8, 0, BLANK),
-            (ASCII, 41, 10, BIG_FULL[False]),
-            (ASCII, 40, 10, BIG_SHORT[False]),
-            (ASCII, 41, 9, TEXT),
-            (ASCII, 26, 10, BIG_SHORT[False]),
-            (ASCII, 25, 10, TEXT),
+            (UNICODE, 41, 5, BIG_FULL_SIZE[True]),
+            (UNICODE, 40, 5, BIG_SHORT_SIZE[True]),
+            (UNICODE, 41, 4, TEXT_SIZE),
+            (UNICODE, 26, 5, BIG_SHORT_SIZE[True]),
+            (UNICODE, 25, 5, TEXT_SIZE),
+            (UNICODE, 8, 1, TEXT_SIZE),
+            (UNICODE, 7, 1, BLANK_SIZE),
+            (UNICODE, 8, 0, BLANK_SIZE),
+            (ASCII, 41, 10, BIG_FULL_SIZE[False]),
+            (ASCII, 40, 10, BIG_SHORT_SIZE[False]),
+            (ASCII, 41, 9, TEXT_SIZE),
+            (ASCII, 26, 10, BIG_SHORT_SIZE[False]),
+            (ASCII, 25, 10, TEXT_SIZE),
         ]
         for caps, cols, rows, expected in cases:
             with self.subTest(unicode=caps.unicode, cols=cols, rows=rows):
@@ -93,7 +93,7 @@ class SizeTierTest(unittest.TestCase):
 
     def test_no_tier_is_ever_clipped(self):
         for caps in (UNICODE, ASCII):
-            whole = {BIG_FULL[caps.unicode], BIG_SHORT[caps.unicode], TEXT, BLANK}
+            whole = {BIG_FULL_SIZE[caps.unicode], BIG_SHORT_SIZE[caps.unicode], TEXT_SIZE, BLANK_SIZE}
             for cols in range(1, 50):
                 for rows in range(1, 13):
                     with self.subTest(unicode=caps.unicode, cols=cols, rows=rows):
@@ -101,7 +101,7 @@ class SizeTierTest(unittest.TestCase):
                         self.assertIn(drawn_box(cells), whole)
 
     def test_blank_tier_is_a_full_padded_frame(self):
-        cells = self.assertTier(UNICODE, 7, 3, BLANK)
+        cells = self.assertTier(UNICODE, 7, 3, BLANK_SIZE)
         self.assertEqual(cells, [" " * 7] * 3)
 
 

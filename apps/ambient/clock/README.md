@@ -73,8 +73,9 @@ draws exactly what `plain` draws, at one frame a second.
 
 ### ASCII fallback
 
-When stdout's encoding can't encode block characters (for example
-`PYTHONIOENCODING=ascii`), the digits are drawn with `#` at 10 rows tall. Stars
+When stdout's encoding can't encode every non-ASCII character the clock
+draws, block digits and effect glyphs alike (for example
+`PYTHONIOENCODING=ascii` or `cp437`), the digits are drawn with `#` at 10 rows tall. Stars
 become `.` `+` `*` and raindrops `|` `:` `.`. With Unicode, the digits
 are half-block characters at 5 rows tall, stars are `·` `✦` and
 raindrops are `│` `╎` `·`.

@@ -8,11 +8,6 @@ Difficulty is relative to the clock, which is the baseline.
 
 ## Next
 
-- **clock** (ambient) — big-digit wall clock. v1 steps 1–3
-  exist (frame loop, signal teardown, big digits); finishing v1
-  (resize, frame-boundary timing, size tiers, tty/NO_COLOR) is
-  folded into clock v2.
-
 - **clock v2** (ambient) — `--theme` flag selecting a palette plus
   at most one effect: `plain` (default), `night` (starfield),
   `rain`, `wave`. Difficulty: low. Scope trap: effects are

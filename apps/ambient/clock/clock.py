@@ -173,8 +173,10 @@ def detect_caps():
 
 
 def unicode_ok():
+    """Whether stdout can encode every non-ASCII glyph: digits and effects."""
+    glyphs = "█▀▄" + "".join(STAR_GLYPHS[True] + RAIN_GLYPHS[True])
     try:
-        "█▀▄".encode(sys.stdout.encoding or "ascii")
+        glyphs.encode(sys.stdout.encoding or "ascii")
         return True
     except (UnicodeEncodeError, LookupError):
         return False
@@ -240,12 +242,12 @@ def build_frame(now, cols, rows, theme, caps, effect_state=None):
     the digits' bounding box plus a 1-cell margin.
     """
     tier, lines = pick_tier(now, cols, rows, caps)
-    effect = theme.effect if tier == BIG_FULL else None
+    effect = showing_effect(theme, tier, caps)
     t = now.timestamp()
     # Each cell is (character, 256-color index or None).
     cells = [[(" ", None)] * cols for _ in range(rows)]
     if not lines:
-        return HOME + "\r\n".join(paint(row, caps) for row in cells)
+        return join_frame(cells, caps)
 
     top = (rows - len(lines)) // 2
     left = (cols - len(lines[0])) // 2
@@ -263,6 +265,22 @@ def build_frame(now, cols, rows, theme, caps, effect_state=None):
                 c = left + j
                 color = effect.tint(t, c) if effect and effect.tint else theme.color
                 cells[top + i][c] = (ch, color)
+    return join_frame(cells, caps)
+
+
+def showing_effect(theme, tier, caps):
+    """The theme's effect if it shows at this tier, else None.
+
+    Effects show only in the big HH:MM:SS tier. A color-only effect (one with
+    no glyphs) doesn't show without color.
+    """
+    effect = theme.effect
+    if effect is None or tier != BIG_FULL or not (effect.glyphs or caps.color):
+        return None
+    return effect
+
+
+def join_frame(cells, caps):
     return HOME + "\r\n".join(paint(row, caps) for row in cells)
 
 
@@ -281,15 +299,9 @@ def paint(row, caps):
 
 
 def frame_rate(now, cols, rows, theme, caps):
-    """Frames per second: the theme's rate while its effect is showing, else 1.
-
-    A color-only effect (one with no glyphs) doesn't show without color.
-    """
+    """Frames per second: the theme's rate while its effect is showing, else 1."""
     tier, _ = pick_tier(now, cols, rows, caps)
-    effect = theme.effect
-    if effect is None or tier != BIG_FULL or not (effect.glyphs or caps.color):
-        return 1
-    return theme.fps
+    return theme.fps if showing_effect(theme, tier, caps) else 1
 
 
 # An effect is the time-varying part of a theme, with three optional parts:
@@ -323,6 +335,8 @@ def star_glyphs(stars, t, cols, rows, unicode):
         if phase >= STAR_LIT:
             continue
         brightness = math.sin(math.pi * phase / STAR_LIT)
+        # A prime multiplier keeps (salt, cycle) pairs from colliding, so each
+        # star gets its own sequence of places.
         place = random.Random(star.salt * 1_000_003 + int(cycle))
         row, col = place.randrange(rows), place.randrange(cols)
         yield (
@@ -449,9 +463,10 @@ def write_out(text):
         data = data[os.write(1, data) :]
 
 
-def teardown():
+def teardown(caps):
+    reset = DEFAULT_FG if caps.color else ""
     try:
-        write_out(DEFAULT_FG + SHOW_CURSOR + LEAVE_ALT_SCREEN)
+        write_out(reset + SHOW_CURSOR + LEAVE_ALT_SCREEN)
     except OSError:
         pass
 
@@ -485,11 +500,10 @@ def main():
     signal.set_wakeup_fd(wake_write_fd)
 
     caps = detect_caps()
-    write_out(ENTER_ALT_SCREEN + HIDE_CURSOR)
-
     rng = random.Random()
     seeded_size = None
     try:
+        write_out(ENTER_ALT_SCREEN + HIDE_CURSOR)
         while True:
             # Take the flag before reading the size, so a resize that lands
             # mid-frame is still seen, and cleared for, next time round.
@@ -510,7 +524,7 @@ def main():
             fps = frame_rate(local, cols, rows, theme, caps)
             wait_until(next_boundary(now, fps), wake_fd)
     finally:
-        teardown()
+        teardown(caps)
 
 
 if __name__ == "__main__":
