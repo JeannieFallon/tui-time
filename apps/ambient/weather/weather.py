@@ -5,6 +5,7 @@ Run: python3 apps/ambient/weather/weather.py <place>
 """
 
 import argparse
+import enum
 import http.client
 import json
 import math
@@ -97,14 +98,23 @@ CONDITIONS = {
 }
 UNKNOWN_CONDITION = "Unknown"
 
+class Sky(enum.Enum):
+    """The coarse group a Condition falls into."""
+
+    CLEAR = "clear"
+    CLOUDY = "cloudy"
+    RAIN = "rain"
+    SNOW = "snow"
+    STORM = "storm"
+
+
 # WMO weather codes to Skies. A code with no Condition has no Sky.
-CLEAR, CLOUDY, RAIN, SNOW, STORM = "clear", "cloudy", "rain", "snow", "storm"
 SKY_CODES = {
-    CLEAR: range(0, 2),
-    CLOUDY: [*range(2, 4), *range(45, 49)],
-    RAIN: [*range(51, 68), *range(80, 83)],
-    SNOW: [*range(71, 78), *range(85, 87)],
-    STORM: range(95, 100),
+    Sky.CLEAR: range(0, 2),
+    Sky.CLOUDY: [*range(2, 4), *range(45, 49)],
+    Sky.RAIN: [*range(51, 68), *range(80, 83)],
+    Sky.SNOW: [*range(71, 78), *range(85, 87)],
+    Sky.STORM: range(95, 100),
 }
 SKIES = {code: sky for sky, codes in SKY_CODES.items() for code in codes if code in CONDITIONS}
 
@@ -367,7 +377,7 @@ ICON_BITMAPS = {
         " MMMM    ",
         "   MMMM  ",
     ),
-    CLOUDY: (
+    "cloud": (
         "           ",
         "           ",
         "   CCC     ",
@@ -379,7 +389,7 @@ ICON_BITMAPS = {
         "           ",
         "           ",
     ),
-    RAIN: (
+    "rain cloud": (
         "   CCC     ",
         "  CCCCC CC ",
         " CCCCCCCCCC",
@@ -391,7 +401,7 @@ ICON_BITMAPS = {
         "    R    R ",
         "    R      ",
     ),
-    SNOW: (
+    "snow cloud": (
         "   CCC     ",
         "  CCCCC CC ",
         " CCCCCCCCCC",
@@ -403,7 +413,7 @@ ICON_BITMAPS = {
         "           ",
         "   F   F   ",
     ),
-    STORM: (
+    "storm cloud": (
         "   KKK     ",
         "  KKKKK KK ",
         " KKKKKKKKKK",
@@ -429,11 +439,13 @@ ICON_COLORS = {
 }
 
 
+# Each Sky's icon. Only Clear has a night icon, the moon.
+SKY_ICONS = {Sky.CLEAR: "sun", Sky.CLOUDY: "cloud", Sky.RAIN: "rain cloud", Sky.SNOW: "snow cloud", Sky.STORM: "storm cloud"}
+
+
 def icon_name(sky, is_day):
-    """The icon for a Sky: the Clear Sky is a sun by day and a moon by night."""
-    if sky == CLEAR:
-        return "sun" if is_day else "moon"
-    return sky
+    """The icon for a Sky, by day or by night."""
+    return "moon" if sky is Sky.CLEAR and not is_day else SKY_ICONS[sky]
 
 
 # Text glyphs that have an ASCII stand-in.
@@ -520,11 +532,11 @@ def big_text(chars, caps):
     return [GAP.join(g[i] for g in drawn) for i in range(len(drawn[0]))]
 
 
-def whole_degrees(temperature):
-    """The temperature rounded to whole degrees, halves away from zero,
-    as text. Never "-0"."""
-    rounded = int(math.floor(abs(temperature) + 0.5))
-    return f"-{rounded}" if temperature < 0 and rounded else str(rounded)
+def whole(value):
+    """value rounded to a whole number, halves away from zero, as text.
+    Never "-0"."""
+    rounded = int(math.floor(abs(value) + 0.5))
+    return f"-{rounded}" if value < 0 and rounded else str(rounded)
 
 
 COMPASS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
@@ -541,11 +553,11 @@ def detail_lines(reading, g):
     out only its own item, and a line with no items is left out."""
 
     def degrees(value):
-        return f"{whole_degrees(value)}{g['deg']}"
+        return f"{whole(value)}{g['deg']}"
 
     wind = None
     if reading.wind_speed is not None:
-        speed = whole_degrees(reading.wind_speed)
+        speed = whole(reading.wind_speed)
         if int(speed) < 1:
             wind = "wind calm"
         else:
@@ -557,7 +569,7 @@ def detail_lines(reading, g):
     )
     lines = (
         (reading.feels is not None and f"feels {degrees(reading.feels)}", high_low),
-        (wind, reading.rain is not None and f"rain {whole_degrees(reading.rain)}%"),
+        (wind, reading.rain is not None and f"rain {whole(reading.rain)}%"),
     )
     return [g["sep"].join(item for item in items if item) for items in lines if any(items)]
 
@@ -645,14 +657,13 @@ def retry_text(state, mono, g):
 # and the 256-color index of each character, or None for no colors.
 Line = namedtuple("Line", "text dim colors", defaults=(False, None))
 
-FULL, BIG_ICON, BIG, COMPACT_AGE, COMPACT, MINIMAL, BLANK = (
+FULL, BIG_ICON, BIG, COMPACT_AGE, COMPACT, MINIMAL = (
     "full",
     "big with icon",
     "big",
     "compact with age",
     "compact",
     "minimal",
-    "blank",
 )
 
 
@@ -683,7 +694,7 @@ def tiers(state, mono, caps):
     reading = state.reading
     if reading is not None:
         stale = freshness(reading, mono) is STALE
-        degrees = whole_degrees(reading.temperature)
+        degrees = whole(reading.temperature)
         temperature = f"{degrees}{g['deg']}{reading.unit}"
         compact = Line(f"{temperature} {reading.condition}", stale)
         age = f"updated {age_text(mono - reading.fetched_at)}"
@@ -712,12 +723,22 @@ def tiers(state, mono, caps):
     return [(COMPACT, [Line(full)]), (MINIMAL, [Line(state.cause)]), (MINIMAL, [Line("!")])]
 
 
-def pick_tier(state, mono, cols, rows, caps):
-    """The largest size tier that fits the pane, as its name and Lines."""
+def layout(state, mono, cols, rows, caps):
+    """The Lines of the largest size tier that fits the pane, and the Effect
+    that shows around them, or None.
+
+    An Effect shows only while the Reading is Fresh, only in the icon tiers,
+    and only for a Sky that has one.
+    """
     for name, lines in tiers(state, mono, caps):
         if max(len(line.text) for line in lines) <= cols and len(lines) <= rows:
-            return name, lines
-    return BLANK, []
+            break
+    else:
+        return [], None
+    reading = expire(state, mono).reading
+    if name not in (FULL, BIG_ICON) or freshness(reading, mono) is not FRESH:
+        return lines, None
+    return lines, SKY_EFFECTS.get(reading.sky)
 
 
 def build_frame(state, mono, cols, rows, caps, effect_state=None):
@@ -731,8 +752,7 @@ def build_frame(state, mono, cols, rows, caps, effect_state=None):
     The Effect, when one shows, never draws inside the block's bounding box
     plus a 1-cell margin.
     """
-    tier, lines = pick_tier(state, mono, cols, rows, caps)
-    effect = tier_effect(expire(state, mono).reading, mono, tier)
+    lines, effect = layout(state, mono, cols, rows, caps)
     # Each cell is (character, 256-color index or None, dim).
     cells = [[(" ", None, False)] * cols for _ in range(rows)]
     top = (rows - len(lines)) // 2
@@ -776,23 +796,19 @@ def paint(row, caps):
     return "".join(out)
 
 
-def tier_effect(reading, mono, tier):
-    """The Effect for the Reading's Sky if it shows: only while the Reading
-    is Fresh, and only in the icon tiers. Else None."""
-    if reading is None or tier not in (FULL, BIG_ICON) or freshness(reading, mono) is not FRESH:
-        return None
-    return SKY_EFFECTS.get(reading.sky)
-
-
 def showing_effect(state, mono, cols, rows, caps):
     """The Effect build_frame draws for these inputs, or None."""
-    tier, _ = pick_tier(state, mono, cols, rows, caps)
-    return tier_effect(expire(state, mono).reading, mono, tier)
+    return layout(state, mono, cols, rows, caps)[1]
 
 
 def frame_rate(state, mono, cols, rows, caps):
+    """Frames per second for build_frame's frame with these inputs."""
+    return effect_fps(showing_effect(state, mono, cols, rows, caps))
+
+
+def effect_fps(effect):
     """Frames per second: EFFECT_FPS while an Effect is showing, else 1."""
-    return EFFECT_FPS if showing_effect(state, mono, cols, rows, caps) else 1
+    return EFFECT_FPS if effect else 1
 
 
 # An Effect is the time-varying part of a frame: seed(cols, rows, rng)
@@ -889,12 +905,7 @@ def snow_glyphs(columns, t, cols, rows, unicode):
 
 DROPS = Effect(seed_rain, rain_glyphs)
 FLAKES = Effect(seed_snow, snow_glyphs)
-SKY_EFFECTS = {RAIN: DROPS, STORM: DROPS, SNOW: FLAKES}
-
-
-def seed_effect(effect, cols, rows, rng):
-    """Fresh state for an Effect in a pane of this size."""
-    return effect.seed(cols, rows, rng)
+SKY_EFFECTS = {Sky.RAIN: DROPS, Sky.STORM: DROPS, Sky.SNOW: FLAKES}
 
 
 def get_pane_size():
@@ -1040,7 +1051,7 @@ def step(state, args, get):
 def one_line(label, reading, unicode):
     """The Reading as one plain line, for when stdout isn't a tty."""
     deg = TEXT_GLYPHS[unicode]["deg"]
-    return f"{shown_label(label, unicode)} {whole_degrees(reading.temperature)}{deg}{reading.unit} {reading.condition}"
+    return f"{shown_label(label, unicode)} {whole(reading.temperature)}{deg}{reading.unit} {reading.condition}"
 
 
 def run_plain(args, get, unicode, out):
@@ -1078,7 +1089,7 @@ def run_pane(args, caps, wake_fd):
         if effect is None:
             seeded_for = None
         elif was_resized or seeded_for != (effect, cols, rows):
-            effect_state = seed_effect(effect, cols, rows, rng)
+            effect_state = effect.seed(cols, rows, rng)
             seeded_for = (effect, cols, rows)
         frame = build_frame(state, mono, cols, rows, caps, effect_state)
         if was_resized:
@@ -1095,7 +1106,7 @@ def run_pane(args, caps, wake_fd):
             if state is NO_MATCH:
                 return NO_MATCH
             continue
-        fps = frame_rate(state, mono, cols, rows, caps)
+        fps = effect_fps(effect)
         wait_until(next_boundary(time.time(), fps), wake_fd)
 
 

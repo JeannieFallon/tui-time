@@ -107,7 +107,7 @@ class GeocodeResultTest(unittest.TestCase):
 class ForecastResultTest(unittest.TestCase):
     def test_current_conditions_become_a_reading_fetched_at_the_given_time(self):
         reading = weather.forecast_result(forecast_json(12.3, 61), "C", fetched_at=500.0)
-        self.assertEqual(reading, weather.Reading(12.3, "Light rain", "C", 500.0, sky=weather.RAIN))
+        self.assertEqual(reading, weather.Reading(12.3, "Light rain", "C", 500.0, sky=weather.Sky.RAIN))
 
     def test_every_field_becomes_part_of_the_reading(self):
         reading = weather.forecast_result(full_forecast_json(), "C", fetched_at=500.0)
@@ -118,7 +118,7 @@ class ForecastResultTest(unittest.TestCase):
                 "Light rain",
                 "C",
                 500.0,
-                sky=weather.RAIN,
+                sky=weather.Sky.RAIN,
                 is_day=True,
                 feels=9.4,
                 high=14.2,
@@ -318,7 +318,7 @@ class ReadingFrameTest(unittest.TestCase):
 
     def test_no_color_escapes_when_color_is_disabled(self):
         for unicode in (True, False):
-            for state in (reading_state(), reading_state(sky=weather.STORM), reading_state(sky=weather.CLEAR, is_day=False)):
+            for state in (reading_state(), reading_state(sky=weather.Sky.STORM), reading_state(sky=weather.Sky.CLEAR, is_day=False)):
                 caps = weather.Caps(color=False, unicode=unicode)
                 with self.subTest(unicode=unicode, sky=state.reading.sky):
                     self.assertIsNone(SGR.search(weather.build_frame(state, T0, 80, 24, caps)))
@@ -357,13 +357,13 @@ def icon_colors(state, mono=T0, caps=UNICODE):
 
 # Each Condition's Sky, from the spec.
 EXPECTED_SKIES = {
-    **dict.fromkeys((0, 1), weather.CLEAR),
-    **dict.fromkeys((2, 3, 45, 48), weather.CLOUDY),
-    **dict.fromkeys((51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82), weather.RAIN),
-    **dict.fromkeys((71, 73, 75, 77, 85, 86), weather.SNOW),
-    **dict.fromkeys((95, 96, 99), weather.STORM),
+    **dict.fromkeys((0, 1), weather.Sky.CLEAR),
+    **dict.fromkeys((2, 3, 45, 48), weather.Sky.CLOUDY),
+    **dict.fromkeys((51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82), weather.Sky.RAIN),
+    **dict.fromkeys((71, 73, 75, 77, 85, 86), weather.Sky.SNOW),
+    **dict.fromkeys((95, 96, 99), weather.Sky.STORM),
 }
-SKIES = (weather.CLEAR, weather.CLOUDY, weather.RAIN, weather.SNOW, weather.STORM)
+SKIES = (weather.Sky.CLEAR, weather.Sky.CLOUDY, weather.Sky.RAIN, weather.Sky.SNOW, weather.Sky.STORM)
 
 
 class SkyTest(unittest.TestCase):
@@ -415,30 +415,30 @@ class IconTest(unittest.TestCase):
                 self.assertTrue(set(icon_rows) <= set(digit_rows))
 
     def test_clear_at_night_is_a_moon_and_no_other_sky_changes(self):
-        self.assertNotEqual(self.icon(sky=weather.CLEAR, is_day=False), self.icon(sky=weather.CLEAR))
-        self.assertNotEqual(icon_colors(reading_state(sky=weather.CLEAR, is_day=False)), icon_colors(reading_state(sky=weather.CLEAR)))
+        self.assertNotEqual(self.icon(sky=weather.Sky.CLEAR, is_day=False), self.icon(sky=weather.Sky.CLEAR))
+        self.assertNotEqual(icon_colors(reading_state(sky=weather.Sky.CLEAR, is_day=False)), icon_colors(reading_state(sky=weather.Sky.CLEAR)))
         for sky in SKIES[1:]:
             with self.subTest(sky=sky):
                 self.assertEqual(self.icon(sky=sky, is_day=False), self.icon(sky=sky))
 
     def test_icons_are_colored_by_sky_and_the_digits_are_not(self):
-        sun = icon_colors(reading_state(sky=weather.CLEAR))
+        sun = icon_colors(reading_state(sky=weather.Sky.CLEAR))
         self.assertEqual(len(sun), 1)
-        self.assertEqual(len(icon_colors(reading_state(sky=weather.CLOUDY))), 1)
-        for sky in (weather.RAIN, weather.SNOW, weather.STORM):
+        self.assertEqual(len(icon_colors(reading_state(sky=weather.Sky.CLOUDY))), 1)
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW, weather.Sky.STORM):
             with self.subTest(sky=sky):
                 self.assertEqual(len(icon_colors(reading_state(sky=sky))), 2)  # a cloud and what falls from it
-        self.assertTrue(sun < icon_colors(reading_state(sky=weather.STORM)))  # the bolt is the sun's yellow
-        self.assertEqual(icon_colors(reading_state(sky=weather.RAIN), caps=ASCII), icon_colors(reading_state(sky=weather.RAIN)))
+        self.assertTrue(sun < icon_colors(reading_state(sky=weather.Sky.STORM)))  # the bolt is the sun's yellow
+        self.assertEqual(icon_colors(reading_state(sky=weather.Sky.RAIN), caps=ASCII), icon_colors(reading_state(sky=weather.Sky.RAIN)))
 
     def test_a_stale_reading_dims_the_icon(self):
         for mono, dim in ((T0, False), (T0 + 30 * MIN, True)):
             with self.subTest(dim=dim):
-                cells = styled(weather.build_frame(reading_state(sky=weather.STORM), mono, 80, 24, UNICODE))
+                cells = styled(weather.build_frame(reading_state(sky=weather.Sky.STORM), mono, 80, 24, UNICODE))
                 self.assertEqual({d for row in cells for ch, color, d in row if color is not None}, {dim})
 
 
-FULL_FIELDS = dict(sky=weather.RAIN, feels=9.4, high=14.2, low=6.6, wind_speed=12.2, wind_direction=310.0, rain=40.0)
+FULL_FIELDS = dict(sky=weather.Sky.RAIN, feels=9.4, high=14.2, low=6.6, wind_speed=12.2, wind_direction=310.0, rain=40.0)
 
 
 def full_state(unit="C", **fields):
@@ -540,36 +540,36 @@ class EffectTest(unittest.TestCase):
     def frame(self, state, mono, cols, rows, caps=UNICODE, seed=1):
         """A frame with the Effect seeded as the app seeds it."""
         effect = weather.showing_effect(state, mono, cols, rows, caps)
-        seeded = weather.seed_effect(effect, cols, rows, random.Random(seed)) if effect else None
+        seeded = effect.seed(cols, rows, random.Random(seed)) if effect else None
         return weather.build_frame(state, mono, cols, rows, caps, seeded)
 
     def drawn(self, state, mono, cols, rows, caps=UNICODE):
         """Whether either Effect, seeded and passed in, changes the frame."""
         plain = weather.build_frame(state, mono, cols, rows, caps)
-        for sky in (weather.RAIN, weather.SNOW):
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW):
             effect = weather.showing_effect(full_state(sky=sky), T0, 80, 24, caps)
-            seeded = weather.seed_effect(effect, cols, rows, random.Random(1))
+            seeded = effect.seed(cols, rows, random.Random(1))
             if weather.build_frame(state, mono, cols, rows, caps, seeded) != plain:
                 return True
         return False
 
     def test_drops_on_rain_and_storm_and_flakes_on_snow(self):
         glyphs = {}
-        for sky in (weather.RAIN, weather.STORM, weather.SNOW):
+        for sky in (weather.Sky.RAIN, weather.Sky.STORM, weather.Sky.SNOW):
             with self.subTest(sky=sky):
                 state = full_state(sky=sky)
                 plain = grid(weather.build_frame(state, T0, 80, 24, UNICODE))
                 cells = grid(self.frame(state, T0, 80, 24))
                 glyphs[sky] = {a for row, base in zip(cells, plain) for a, b in zip(row, base) if a != b}
                 self.assertTrue(glyphs[sky])
-        self.assertEqual(glyphs[weather.RAIN], glyphs[weather.STORM])
-        self.assertIn("│", glyphs[weather.RAIN])
-        self.assertNotIn("*", glyphs[weather.RAIN])
-        self.assertIn("*", glyphs[weather.SNOW])
-        self.assertNotIn("│", glyphs[weather.SNOW])
+        self.assertEqual(glyphs[weather.Sky.RAIN], glyphs[weather.Sky.STORM])
+        self.assertIn("│", glyphs[weather.Sky.RAIN])
+        self.assertNotIn("*", glyphs[weather.Sky.RAIN])
+        self.assertIn("*", glyphs[weather.Sky.SNOW])
+        self.assertNotIn("│", glyphs[weather.Sky.SNOW])
 
     def test_the_block_and_its_margin_are_never_drawn_over(self):
-        for sky in (weather.RAIN, weather.SNOW):
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW):
             for caps in (UNICODE, ASCII):
                 for state in (full_state(sky=sky), reading_state(sky=sky), full_state(sky=sky, wind_speed=None, rain=None)):
                     for cols, rows in self.SIZES:
@@ -585,11 +585,11 @@ class EffectTest(unittest.TestCase):
                                         self.assertEqual(cells[r][left : right + 1], plain[r][left : right + 1])
 
     def test_the_effect_moves(self):
-        state = full_state(sky=weather.SNOW)
+        state = full_state(sky=weather.Sky.SNOW)
         self.assertNotEqual(self.frame(state, T0, 80, 24), self.frame(state, T0 + 1, 80, 24))
 
     def test_no_effect_on_clear_cloudy_or_an_unknown_code(self):
-        for sky in (weather.CLEAR, weather.CLOUDY, None):
+        for sky in (weather.Sky.CLEAR, weather.Sky.CLOUDY, None):
             for is_day in (True, False):
                 with self.subTest(sky=sky, is_day=is_day):
                     state = full_state(sky=sky, is_day=is_day)
@@ -621,14 +621,14 @@ class EffectTest(unittest.TestCase):
 
     def test_uncolored_but_still_drawn_without_color(self):
         caps = weather.Caps(color=False, unicode=True)
-        for sky in (weather.RAIN, weather.SNOW):
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW):
             with self.subTest(sky=sky):
                 frame = self.frame(full_state(sky=sky), T0, 80, 24, caps)
                 self.assertIsNone(SGR.search(frame))
                 self.assertNotEqual(frame, weather.build_frame(full_state(sky=sky), T0, 80, 24, caps))
 
     def test_ascii_glyphs_without_unicode(self):
-        for sky in (weather.RAIN, weather.SNOW):
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW):
             for mono in self.TIMES:
                 with self.subTest(sky=sky, mono=mono):
                     frame = self.frame(full_state(sky=sky), mono, 80, 24, ASCII)
@@ -640,14 +640,14 @@ class FrameRateTest(unittest.TestCase):
     def test_8_while_an_effect_shows_else_1(self):
         cases = [
             (full_state(), T0, 80, 24, 8),
-            (full_state(sky=weather.STORM), T0, 80, 24, 8),
-            (reading_state(sky=weather.SNOW), T0, 29, 9, 8),
+            (full_state(sky=weather.Sky.STORM), T0, 80, 24, 8),
+            (reading_state(sky=weather.Sky.SNOW), T0, 29, 9, 8),
             (full_state(), T0 + 30 * MIN, 80, 24, 1),
             (full_state(), T0 + 3 * HOUR, 80, 24, 1),
             (full_state(), T0, 28, 24, 1),
             (full_state(), T0, 20, 2, 1),
-            (full_state(sky=weather.CLEAR), T0, 80, 24, 1),
-            (full_state(sky=weather.CLOUDY), T0, 80, 24, 1),
+            (full_state(sky=weather.Sky.CLEAR), T0, 80, 24, 1),
+            (full_state(sky=weather.Sky.CLOUDY), T0, 80, 24, 1),
             (full_state(sky=None), T0, 80, 24, 1),
             (weather.initial_state("lisbon"), T0, 80, 24, 1),
         ]
@@ -785,7 +785,7 @@ class SizeTierTest(unittest.TestCase):
 
     def test_big_with_icon_tier_at_exact_thresholds(self):
         # The rain icon is 11 wide, then a 2-cell gap, then the 16-wide digits.
-        state = reading_state(sky=weather.RAIN)
+        state = reading_state(sky=weather.Sky.RAIN)
         big_with_icon = self.tier(state, 80, 24)
         self.assertEqual(len(big_with_icon), 8)
         self.assertEqual(big_with_icon[5:], ["Light rain · °C", "Lisbon, Lisbon District, PT", "updated just now"])
@@ -809,7 +809,7 @@ class SizeTierTest(unittest.TestCase):
             ["Light rain · °C", "feels 9° · H 14° L 7°", "wind 12 km/h NW · rain 40%", "Lisbon, Lisbon District, PT", "updated just now"],
         )
         for caps, rows in ((UNICODE, 11), (ASCII, 16)):
-            big_with_icon = self.tier(reading_state(sky=weather.RAIN), 80, 24, caps)
+            big_with_icon = self.tier(reading_state(sky=weather.Sky.RAIN), 80, 24, caps)
             cases = [
                 (29, rows, self.tier(state, 80, 24, caps)),
                 (29, rows - 1, big_with_icon),
@@ -872,10 +872,10 @@ class SizeTierTest(unittest.TestCase):
         """(state, time, how many distinct layouts it has, blank included)."""
         return [
             (reading_state(), T0, 5),
-            (reading_state(sky=weather.RAIN), T0, 6),
+            (reading_state(sky=weather.Sky.RAIN), T0, 6),
             (full_state(), T0, 7),
-            (full_state("F", sky=weather.SNOW, wind_speed=0.1), T0 + 45 * 60, 7),
-            (reading_state(-104.0, "Thunderstorm, hail", "F", sky=weather.STORM), T0 + 45 * 60, 6),
+            (full_state("F", sky=weather.Sky.SNOW, wind_speed=0.1), T0 + 45 * 60, 7),
+            (reading_state(-104.0, "Thunderstorm, hail", "F", sky=weather.Sky.STORM), T0 + 45 * 60, 6),
             (reading_state(-104.0, "Thunderstorm, hail", "F"), T0 + 45 * 60, 5),
             (weather.failed(reading_state(), "bad response", at(20 * 60)), T0 + 20 * 60, 5),
             (weather.initial_state("springfield"), T0, 3),
