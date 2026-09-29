@@ -11,7 +11,7 @@ Reference material for building the apps in this repo.
   use. Screen buffer, cursor, color, attributes, block characters,
   and the half-block trick for square pixels.
 
-- **[verifying.md](verifying.md)** — checklists for confirming an app
+- **[verify.md](verify.md)** — checklists for confirming an app
   works, including the failures that are only visible in the terminal
   after the app exits.
 

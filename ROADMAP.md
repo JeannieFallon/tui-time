@@ -6,13 +6,15 @@ Difficulty is relative to the clock, which is the baseline.
 
 ## Built
 
-- **clock** (ambient) — big-digit wall clock
-
 ## Next
 
-- **clock v2** (ambient) — color themes, one background animation.
-  Difficulty: low. Scope trap: "animations" is unbounded. One
-  effect, ship it, add the second later.
+- **clock v2** (ambient) — `--theme` flag selecting a palette plus
+  at most one effect: `plain` (default), `night` (starfield),
+  `rain`, `wave`. Difficulty: low. Scope trap: effects are
+  unbounded. Each effect is its own ticket, built last. All four
+  themes and the v1 finish are built on `ambient-clock`, awaiting
+  review and merge.
+  In progress: #1
 
 - **weather** (ambient) — current conditions for a location.
   Difficulty: low-moderate. Use a keyless API (Open-Meteo,
@@ -64,6 +66,16 @@ Interactive:
   low-moderate. Arguably ambient if it takes no input. State must
   survive, and completion needs a terminal bell or a
   notify-send.
+
+## Ideas, unscoped
+
+- **Inference-backed apps.** TUI apps that call an inference
+  endpoint, either a frontier API or a self-hosted server
+  (vLLM, Ollama). Not scoped. Open questions: what an ambient
+  app does with a non-deterministic, latency-variable,
+  sometimes-failing backend; whether the interesting apps here
+  are ambient or interactive; whether local and remote are one
+  app with a config switch or two apps.
 
 ## Shelved
 

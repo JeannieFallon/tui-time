@@ -208,8 +208,8 @@ clock with big digits needs maybe 40x7. Below that: a compact
 fallback, or a short message. Undefined behavior here is what makes
 an app feel unfinished.
 
-**Color.** Respect `NO_COLOR`. If the environment variable is set to
-anything, emit no color escapes at all. This is a widely observed
+**Color.** Respect `NO_COLOR`. If the environment variable is set to a
+non-empty value, emit no color escapes at all. This is a widely observed
 convention and costs one conditional.
 
 **Not a tty.** If `sys.stdout.isatty()` is false, the output is being
