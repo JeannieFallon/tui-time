@@ -44,6 +44,8 @@ Difficulty is relative to the clock, which is the baseline.
   - v2: feels-like, high/low, wind, humidity, precipitation,
     condition icons, themes, on-disk cache
 
+  In progress: #12
+
   After weather, the ambient scaffold (setup/loop/teardown)
   exists twice. Decide at the third ambient app whether to
   extract it.
