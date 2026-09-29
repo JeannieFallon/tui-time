@@ -10,9 +10,11 @@ file with no dependencies beyond the standard library.
 | App | Class | What it does |
 |-----|-------|--------------|
 | [clock](apps/ambient/clock/README.md) | ambient | Big-digit wall clock that fills the pane, with optional themes: `plain`, `night`, `rain`, `wave` |
+| [weather](apps/ambient/weather/README.md) | ambient | Current conditions for one place from Open-Meteo: big-digit temperature, condition, location and how old the reading is, with a defined pane for every failure |
 
 ```
 python3 apps/ambient/clock/clock.py --theme night
+python3 apps/ambient/weather/weather.py Lisbon
 ```
 
 Ambient apps fill a pane and are looked at, not driven. Interactive
@@ -28,6 +30,7 @@ lists what's next.
   draw without color.
 - A UTF-8 terminal and a font with block characters for the best
   rendering. Otherwise the apps fall back to ASCII.
+- Network access to Open-Meteo for weather. No API key is needed.
 - tmux is optional. Each app fills whatever terminal or pane it runs in
   and redraws on resize.
 

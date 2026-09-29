@@ -13,38 +13,24 @@ Difficulty is relative to the clock, which is the baseline.
   `plain` (default), `night` (starfield), `rain`, `wave`.
   Shipped: #11
 
+- **weather** (ambient) — current conditions for one place from
+  Open-Meteo, keyless. Place name geocoded once at startup (top
+  match; no match exits 2). Big-digit temperature, Condition,
+  location and age lines. Fetches on quarter hours, with
+  1/2/4/8/15-minute backoff on failure. Every failure state has a
+  defined pane. Readings Stale (dimmed) at 30 minutes, Expired
+  (dropped) at 3 hours. Size tiers down to a blank pane, plain
+  line when piped, `NO_COLOR` and ASCII fallback,
+  `--units imperial`.
+  Shipped: #19
+
 ## Next
 
-- **weather** (ambient) — current conditions for a location.
-  Difficulty: low-moderate. The work is in failure states:
-  timeout, no network, stale reading, what the pane shows when a
-  fetch fails. Scope so far:
-  - Open-Meteo, keyless, so v1 has no secret management
-  - Location is a required positional place name, geocoded once
-    at startup via Open-Meteo; top match, resolved name shown in
-    the pane (the typed name until geocoding succeeds); no match
-    exits 2; no auto-detection
-  - Shows temperature (big digits, glyphs copied from clock),
-    condition word, location name, last-updated age
-  - Fetch every 15 minutes on a boundary; on failure retry with
-    backoff 1/2/4/8 minutes, capped at 15
-  - Synchronous fetch with a short timeout, no threads
-  - Last reading kept in memory only, nothing on disk. Age
-    counts from fetch time (monotonic), not the API timestamp. Stale
-    after 30 minutes (shown dimmed), expired after 3 hours
-    (dropped)
-  - Every failure state has a defined pane: fetching, failed
-    with cause and retry countdown, reading with failure noted
-    on the age line
-  - One frame a second; size tiers big / compact line /
-    temperature only / blank
-  - Not a tty: one plain line, exit 0, or exit 1 with the cause
-    on stderr
-  - Metric by default, `--units imperial`
-  - v2: feels-like, high/low, wind, humidity, precipitation,
-    condition icons, themes, on-disk cache
-
-  v2 notes, not yet scoped (grill before spec):
+- **weather v2** (ambient) — more data and condition icons for
+  the built weather app. Not yet scoped; grill before spec.
+  Candidates carried over from v1: feels-like, high/low, wind,
+  humidity, precipitation, condition icons, themes, on-disk
+  cache. Notes from the v1 review:
   - Data: the existing forecast request can return everything
     below, so no new calls. Current: `apparent_temperature`,
     `relative_humidity_2m`, `wind_speed_10m`,
@@ -65,15 +51,13 @@ Difficulty is relative to the clock, which is the baseline.
     whether animation stops when the Reading is Stale; `is_day`
     alone vs sunrise/sunset for day and night
 
-  In progress: #12
-
-  After weather, the ambient scaffold (setup/loop/teardown)
-  exists twice. Decide at the third ambient app whether to
-  extract it.
-
 - **ping** (ambient) — latency to a host as a scrolling
   sparkline. Difficulty: low. Establishes the ring buffer pattern
   that resource-viz reuses.
+
+  The ambient scaffold (setup/loop/teardown) exists twice, in
+  clock and weather. Ping is the third ambient app: decide there
+  whether to extract it.
 
 - **resource-viz** (ambient) — abstract visualization of system
   load. Difficulty: moderate. v1 is CPU only, one visual
