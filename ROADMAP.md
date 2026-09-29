@@ -6,15 +6,14 @@ Difficulty is relative to the clock, which is the baseline.
 
 ## Built
 
-## Next
+- **clock** (ambient) — big-digit wall clock. Full-pane frames
+  with clean resize, frame-boundary timing, size tiers down to a
+  blank pane, plain output when piped, `NO_COLOR` and ASCII
+  fallback. `--theme` selects a palette plus at most one effect:
+  `plain` (default), `night` (starfield), `rain`, `wave`.
+  Shipped: #11
 
-- **clock v2** (ambient) — `--theme` flag selecting a palette plus
-  at most one effect: `plain` (default), `night` (starfield),
-  `rain`, `wave`. Difficulty: low. Scope trap: effects are
-  unbounded. Each effect is its own ticket, built last. All four
-  themes and the v1 finish are built on `ambient-clock`, awaiting
-  review and merge.
-  In progress: #1
+## Next
 
 - **weather** (ambient) — current conditions for a location.
   Difficulty: low-moderate. Use a keyless API (Open-Meteo,
