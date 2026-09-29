@@ -16,9 +16,9 @@ Difficulty is relative to the clock, which is the baseline.
 - **clock v2** (ambient) — `--theme` flag selecting a palette plus
   at most one effect: `plain` (default), `night` (starfield),
   `rain`, `wave`. Difficulty: low. Scope trap: effects are
-  unbounded. Each effect is its own ticket, built last; the
-  branch may merge after `night` and move `rain`/`wave` to a
-  follow-up.
+  unbounded. Each effect is its own ticket, built last. All four
+  themes and the v1 finish are built on `ambient-clock`, awaiting
+  review and merge.
   In progress: #1
 
 - **weather** (ambient) — current conditions for a location.
