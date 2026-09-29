@@ -16,15 +16,46 @@ Difficulty is relative to the clock, which is the baseline.
 ## Next
 
 - **weather** (ambient) — current conditions for a location.
-  Difficulty: low-moderate. Use a keyless API (Open-Meteo,
-  wttr.in) so v1 has no secret management. The work is in failure
-  states: timeout, no network, stale cache, what the pane shows
-  when the request fails.
+  Difficulty: low-moderate. The work is in failure states:
+  timeout, no network, stale reading, what the pane shows when a
+  fetch fails. Scope so far:
+  - Open-Meteo, keyless, so v1 has no secret management
+  - Location is a required positional place name, geocoded once
+    at startup via Open-Meteo; top match, resolved name shown in
+    the pane (the typed name until geocoding succeeds); no match
+    exits 2; no auto-detection
+  - Shows temperature (big digits, glyphs copied from clock),
+    condition word, location name, last-updated age
+  - Fetch every 15 minutes on a boundary; on failure retry with
+    backoff 1/2/4/8 minutes, capped at 15
+  - Synchronous fetch with a short timeout, no threads
+  - Last reading kept in memory only, nothing on disk. Age
+    counts from fetch time (monotonic), not the API timestamp. Stale
+    after 30 minutes (shown dimmed), expired after 3 hours
+    (dropped)
+  - Every failure state has a defined pane: fetching, failed
+    with cause and retry countdown, reading with failure noted
+    on the age line
+  - One frame a second; size tiers big / compact line /
+    temperature only / blank
+  - Not a tty: one plain line, exit 0, or exit 1 with the cause
+    on stderr
+  - Metric by default, `--units imperial`
+  - v2: feels-like, high/low, wind, humidity, precipitation,
+    condition icons, themes, on-disk cache
+
+  After weather, the ambient scaffold (setup/loop/teardown)
+  exists twice. Decide at the third ambient app whether to
+  extract it.
+
+- **ping** (ambient) — latency to a host as a scrolling
+  sparkline. Difficulty: low. Establishes the ring buffer pattern
+  that resource-viz reuses.
 
 - **resource-viz** (ambient) — abstract visualization of system
   load. Difficulty: moderate. v1 is CPU only, one visual
-  metaphor. Memory, disk, network are v2. Needs an exponential
-  moving average on every input; raw samples jitter and read as
+  metaphor. Memory, disk, network are v2. Reuses ping's ring
+  buffer. Needs an exponential moving average on every input; raw samples jitter and read as
   broken. Sampling from /proc is the easy part, the mapping from
   numbers to aesthetics is the app.
 
@@ -36,10 +67,6 @@ Ambient:
   commit age for a given repo path. Difficulty: low. Shells out
   to git, so it exercises subprocess handling.
 
-- **ping** — latency to a host as a scrolling sparkline.
-  Difficulty: low. Establishes the ring buffer pattern that
-  resource-viz reuses.
-
 - **moon** — moon phase, illuminated fraction, next full/new.
   Difficulty: low. No API needed: closed-form from a known epoch,
   synodic month ~29.53 days, accurate to well under a day. The
@@ -47,7 +74,7 @@ Ambient:
 
 - **daylight** — sunrise, sunset, remaining daylight. Difficulty:
   low. Pure computation like moon, pairs with it. Needs a
-  lat/long, which is the first app to want any config at all.
+  lat/long, taken the same way weather takes its location.
 
 - **headlines** — RSS or Hacker News top items, scrolling.
   Difficulty: moderate. Network plus text wrapping at arbitrary
