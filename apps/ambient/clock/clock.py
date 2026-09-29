@@ -442,9 +442,16 @@ def wait_until(deadline, wake_fd):
                 pass
 
 
+def write_out(text):
+    """Write text to stdout in one write, bypassing Python's buffering."""
+    data = text.encode(sys.stdout.encoding or "utf-8")
+    while data:
+        data = data[os.write(1, data) :]
+
+
 def teardown():
     try:
-        os.write(1, (SHOW_CURSOR + LEAVE_ALT_SCREEN).encode())
+        write_out(DEFAULT_FG + SHOW_CURSOR + LEAVE_ALT_SCREEN)
     except OSError:
         pass
 
@@ -478,9 +485,7 @@ def main():
     signal.set_wakeup_fd(wake_write_fd)
 
     caps = detect_caps()
-    sys.stdout.write(ENTER_ALT_SCREEN)
-    sys.stdout.write(HIDE_CURSOR)
-    sys.stdout.flush()
+    write_out(ENTER_ALT_SCREEN + HIDE_CURSOR)
 
     rng = random.Random()
     seeded_size = None
@@ -496,8 +501,7 @@ def main():
             if resized:
                 resized = False
                 frame = CLEAR + frame
-            sys.stdout.write(frame)
-            sys.stdout.flush()
+            write_out(frame)
             fps = frame_rate(local, cols, rows, theme, caps)
             wait_until(next_boundary(now, fps), wake_fd)
     finally:
