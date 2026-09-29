@@ -333,6 +333,46 @@ def star_glyphs(stars, t, cols, rows, unicode):
         )
 
 
+# rain: drops falling slowly down some columns, each column with its own
+# speed, length and gap between drops. Tuning constants, chosen by eye.
+RAIN_COLUMNS = 0.3  # fraction of columns with rain
+RAIN_SPEED = (2.0, 6.0)  # rows a second
+RAIN_LENGTH = (2, 6)  # rows, including the leading glyph
+RAIN_GAP = (0.5, 2.0)  # rows between drops, as a multiple of pane height
+RAIN_GLYPHS = {True: ("│", "╎", "·"), False: ("|", ":", ".")}  # lead to tail
+RAIN_COLORS = (153, 110, 67, 60)  # lead to tail
+Drop = namedtuple("Drop", "speed length span offset")
+
+
+def seed_rain(cols, rows, rng):
+    """One Drop, or None, per column."""
+    columns = []
+    for _ in range(cols):
+        if rng.random() >= RAIN_COLUMNS:
+            columns.append(None)
+            continue
+        length = rng.randint(*RAIN_LENGTH)
+        span = rows + length + round(rows * rng.uniform(*RAIN_GAP))
+        columns.append(Drop(rng.uniform(*RAIN_SPEED), length, span, rng.uniform(0, span)))
+    return columns
+
+
+def rain_glyphs(columns, t, cols, rows, unicode):
+    glyphs = RAIN_GLYPHS[unicode]
+    for col, drop in enumerate(columns):
+        if drop is None:
+            continue
+        lead = int((drop.offset + t * drop.speed) % drop.span)
+        for k in range(drop.length):
+            shade = k / drop.length
+            yield (
+                lead - k,
+                col,
+                glyphs[int(shade * len(glyphs))],
+                RAIN_COLORS[int(shade * len(RAIN_COLORS))],
+            )
+
+
 # A theme bundles a palette (color: the 256-color index for the digits, or
 # None for the terminal default, plus whatever colors its effect uses), an
 # optional effect, and a frame rate. Themes only ever set the foreground.
@@ -340,7 +380,8 @@ Theme = namedtuple("Theme", "name color effect fps")
 
 PLAIN = Theme("plain", color=None, effect=None, fps=1)
 NIGHT = Theme("night", color=153, effect=Effect(seed_stars, star_glyphs, None), fps=4)
-THEMES = {t.name: t for t in (PLAIN, NIGHT)}
+RAIN = Theme("rain", color=110, effect=Effect(seed_rain, rain_glyphs, None), fps=8)
+THEMES = {t.name: t for t in (PLAIN, NIGHT, RAIN)}
 
 
 def seed_effect(theme, cols, rows, rng):

@@ -126,7 +126,7 @@ def digit_window(cells):
 class GlyphEffectTest(unittest.TestCase):
     """Effects that draw glyphs around the digits."""
 
-    THEMES = ("night",)
+    THEMES = ("night", "rain")
     # A few seconds apart, and between frames, so effects are mid-motion.
     TIMES = [datetime(2026, 9, 29, 20, 8, 0, 250000 * i) for i in range(4)] + [
         datetime(2026, 9, 29, 20, 8, s) for s in range(1, 30, 3)
@@ -204,7 +204,7 @@ class ArgumentParsingTest(unittest.TestCase):
         self.assertEqual(clock.parse_args([]).name, "plain")
 
     def test_each_valid_name_selects_its_theme(self):
-        for name in ("plain", "night"):
+        for name in ("plain", "night", "rain"):
             with self.subTest(name=name):
                 self.assertEqual(clock.parse_args(["--theme", name]).name, name)
 
