@@ -132,9 +132,21 @@ def text(frame):
     return "\n".join(line.strip() for line in grid(frame))
 
 
+QUARTER = 1790000100.0  # a wall-clock quarter-hour boundary (divisible by 900)
+NOW0 = weather.Now(QUARTER + 7 * 60, T0)
+
+
+def at(seconds):
+    """NOW0 advanced by seconds on both clocks."""
+    return weather.Now(NOW0.wall + seconds, NOW0.mono + seconds)
+
+
+def resolved_state():
+    return weather.resolved(weather.initial_state("lisbon"), LISBON, NOW0)
+
+
 def reading_state(temperature=12.3, condition="Light rain", unit="C"):
-    state = weather.resolved(weather.initial_state("lisbon"), LISBON)
-    return weather.fetched(state, weather.Reading(temperature, condition, unit, T0))
+    return weather.fetched(resolved_state(), weather.Reading(temperature, condition, unit, T0), NOW0)
 
 
 def drawn_box(cells):
@@ -157,7 +169,7 @@ def big_rows(frame):
 
 class ReadingFrameTest(unittest.TestCase):
     def test_frame_covers_every_cell_of_the_pane(self):
-        states = [reading_state(), weather.initial_state("lisbon"), weather.failed(weather.initial_state("lisbon"), "offline")]
+        states = [reading_state(), weather.initial_state("lisbon"), weather.failed(weather.initial_state("lisbon"), "offline", NOW0)]
         for state in states:
             for cols, rows in [(80, 24), (120, 40), (30, 9), (10, 3), (1, 1)]:
                 with self.subTest(state=state, cols=cols, rows=rows):
@@ -225,8 +237,102 @@ class NoReadingFrameTest(unittest.TestCase):
         self.assertIn("lisbon · fetching…", text(frame))
 
     def test_failed_fetch_shows_the_label_and_the_cause(self):
-        state = weather.failed(weather.resolved(weather.initial_state("lisbon"), LISBON), "HTTP 503")
+        state = weather.failed(resolved_state(), "HTTP 503", NOW0)
         self.assertIn("Lisbon, Lisbon District, PT · HTTP 503", text(weather.build_frame(state, T0, 80, 24, UNICODE)))
+
+    def test_failed_fetch_counts_down_to_the_retry(self):
+        state = weather.failed(weather.initial_state("springfield"), "offline", NOW0)  # retry in 60s
+        for elapsed, countdown in [(0, "retry in 1m"), (59.5, "retry in 1m"), (60, "retrying…"), (200, "retrying…")]:
+            with self.subTest(elapsed=elapsed):
+                frame = weather.build_frame(state, T0 + elapsed, 80, 24, UNICODE)
+                self.assertIn(f"springfield · offline · {countdown}", text(frame))
+        state = weather.failed(state, "offline", NOW0)  # retry in 120s
+        self.assertIn("offline · retry in 2m", text(weather.build_frame(state, T0, 80, 24, UNICODE)))
+        self.assertIn("offline · retry in 2m", text(weather.build_frame(state, T0 + 59, 80, 24, UNICODE)))
+        self.assertIn("offline · retry in 1m", text(weather.build_frame(state, T0 + 60, 80, 24, UNICODE)))
+
+    def test_typed_label_until_geocoding_resolves_then_the_resolved_name(self):
+        state = weather.failed(weather.initial_state("lisbon"), "timeout", NOW0)
+        self.assertIn("lisbon · timeout", text(weather.build_frame(state, T0, 80, 24, UNICODE)))
+        state = weather.resolved(state, LISBON, at(60))
+        frame = text(weather.build_frame(state, T0 + 60, 80, 24, UNICODE))
+        self.assertIn("Lisbon, Lisbon District, PT · fetching…", frame)
+        self.assertNotIn("lisbon", frame)
+
+
+class AgeLineTest(unittest.TestCase):
+    def age_line(self, state, elapsed):
+        lines = text(weather.build_frame(state, T0 + elapsed, 80, 24, UNICODE)).split("\n")
+        return lines[lines.index("Lisbon, Lisbon District, PT") + 1]
+
+    def test_age_counts_minutes_since_the_reading_was_fetched(self):
+        cases = [
+            (0, "updated just now"),
+            (59, "updated just now"),
+            (60, "updated 1m ago"),
+            (4 * 60 + 30, "updated 4m ago"),
+            (59 * 60 + 59, "updated 59m ago"),
+            (60 * 60, "updated 1h 0m ago"),
+            (125 * 60, "updated 2h 5m ago"),
+        ]
+        for elapsed, line in cases:
+            with self.subTest(elapsed=elapsed):
+                self.assertEqual(self.age_line(reading_state(), elapsed), line)
+
+    def test_a_failed_fetch_keeps_the_reading_and_notes_the_cause(self):
+        state = weather.failed(reading_state(), "offline", at(20 * 60))
+        self.assertEqual(self.age_line(state, 20 * 60), "updated 20m ago · offline")
+        self.assertIn("Light rain · °C", text(weather.build_frame(state, T0 + 20 * 60, 80, 24, UNICODE)))
+
+    def test_success_after_failure_clears_the_cause(self):
+        state = weather.failed(reading_state(), "offline", at(15 * 60))
+        state = weather.fetched(state, weather.Reading(9.0, "Clear", "C", T0 + 16 * 60), at(16 * 60))
+        self.assertEqual(self.age_line(state, 17 * 60), "updated 1m ago")
+
+
+class ScheduleTest(unittest.TestCase):
+    def test_after_success_the_next_fetch_is_the_next_quarter_hour(self):
+        reading = weather.Reading(1.0, "Clear", "C", T0)
+        for offset, wait in [(0, 900), (0.001, 899.999), (7 * 60, 8 * 60), (899.5, 0.5), (900, 900)]:
+            with self.subTest(offset=offset):
+                now = weather.Now(QUARTER + offset, T0)
+                state = weather.fetched(resolved_state(), reading, now)
+                self.assertAlmostEqual(state.next_fetch, T0 + wait, places=6)
+
+    def test_failures_back_off_1_2_4_8_then_15_minutes(self):
+        state = resolved_state()
+        delays = []
+        for i in range(7):
+            now = at(i * 1000)
+            state = weather.failed(state, "offline", now)
+            delays.append(state.next_fetch - now.mono)
+        self.assertEqual(delays, [60, 120, 240, 480, 900, 900, 900])
+
+    def test_success_resets_the_backoff(self):
+        state = weather.failed(weather.failed(resolved_state(), "offline", NOW0), "offline", NOW0)
+        state = weather.fetched(state, weather.Reading(1.0, "Clear", "C", T0), NOW0)
+        state = weather.failed(state, "timeout", NOW0)
+        self.assertEqual(state.next_fetch - T0, 60)
+
+    def test_geocoding_failures_back_off_the_same_way(self):
+        state = weather.initial_state("lisbon")
+        self.assertTrue(weather.is_due(state, T0))
+        delays = []
+        for _ in range(3):
+            state = weather.failed(state, "offline", NOW0)
+            delays.append(state.next_fetch - T0)
+        self.assertEqual(delays, [60, 120, 240])
+
+    def test_resolving_the_place_makes_a_fetch_due_at_once_and_resets_the_backoff(self):
+        state = weather.failed(weather.failed(weather.initial_state("lisbon"), "offline", NOW0), "offline", NOW0)
+        state = weather.resolved(state, LISBON, at(300))
+        self.assertTrue(weather.is_due(state, T0 + 300))
+        self.assertEqual(weather.failed(state, "HTTP 500", at(300)).next_fetch - (T0 + 300), 60)
+
+    def test_a_fetch_is_due_only_once_its_time_arrives(self):
+        state = weather.failed(resolved_state(), "offline", NOW0)
+        self.assertFalse(weather.is_due(state, T0 + 59.9))
+        self.assertTrue(weather.is_due(state, T0 + 60))
 
 
 class ArgumentParsingTest(unittest.TestCase):

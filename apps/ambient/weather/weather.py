@@ -335,49 +335,85 @@ def whole_degrees(temperature):
     return f"-{rounded}" if temperature < 0 and rounded else str(rounded)
 
 
+FETCH_INTERVAL = 15 * 60  # seconds; fetches land on wall-clock quarter hours
+BACKOFF = (60, 120, 240, 480, 900)  # seconds before each retry; the last repeats
+
+# The current time on both clocks: wall (time.time) for aligning fetches to
+# quarter hours, mono (time.monotonic) for everything measured.
+Now = namedtuple("Now", "wall mono")
+
 # The app state. label is the typed place name until geocoding resolves it,
 # then the resolved name. place is the resolved Place, or None. reading is
 # the current Reading, or None. cause is the last fetch's failure cause, or
-# None if it succeeded or nothing has been tried yet.
-State = namedtuple("State", "label place reading cause")
+# None if it succeeded or nothing has been tried yet. failures counts
+# consecutive failed fetches. next_fetch is when the next fetch is due, on
+# the monotonic clock.
+State = namedtuple("State", "label place reading cause failures next_fetch")
 
 
 def initial_state(typed_name):
-    return State(typed_name, None, None, None)
+    return State(typed_name, None, None, None, 0, -math.inf)
 
 
-def resolved(state, place):
-    """Geocoding matched the place name."""
-    return state._replace(label=place.label, place=place, cause=None)
+def resolved(state, place, now):
+    """Geocoding matched the place name. A Reading is due at once."""
+    return state._replace(label=place.label, place=place, cause=None, failures=0, next_fetch=now.mono)
 
 
-def fetched(state, reading):
-    """A fetch succeeded with this Reading."""
-    return state._replace(reading=reading, cause=None)
+def fetched(state, reading, now):
+    """A fetch succeeded with this Reading. The next is due on the next
+    quarter hour."""
+    boundary = (math.floor(now.wall / FETCH_INTERVAL) + 1) * FETCH_INTERVAL
+    return state._replace(reading=reading, cause=None, failures=0, next_fetch=now.mono + boundary - now.wall)
 
 
-def failed(state, cause):
-    """A geocoding or forecast fetch failed with this cause."""
-    return state._replace(cause=cause)
+def failed(state, cause, now):
+    """A geocoding or forecast fetch failed with this cause. Retry after the
+    backoff for this many consecutive failures."""
+    delay = BACKOFF[min(state.failures, len(BACKOFF) - 1)]
+    return state._replace(cause=cause, failures=state.failures + 1, next_fetch=now.mono + delay)
 
 
-def layouts(state, caps):
+def is_due(state, mono):
+    return mono >= state.next_fetch
+
+
+def age_text(seconds):
+    minutes = int(seconds // 60)
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes}m ago"
+    return f"{minutes // 60}h {minutes % 60}m ago"
+
+
+def retry_text(state, mono, g):
+    remaining = state.next_fetch - mono
+    if remaining <= 0:
+        return f"retrying{g['more']}"
+    return f"retry in {math.ceil(remaining / 60)}m"
+
+
+def layouts(state, mono, caps):
     """Candidate layouts, largest first. Each is a list of lines."""
     g = TEXT_GLYPHS[caps.unicode]
     reading = state.reading
     if reading is not None:
+        age = f"updated {age_text(mono - reading.fetched_at)}"
+        if state.cause is not None:
+            age += g["sep"] + state.cause
         return [
             big_text(whole_degrees(reading.temperature) + "°", caps)
-            + ["", f"{reading.condition}{g['sep']}{g['deg']}{reading.unit}", state.label]
+            + ["", f"{reading.condition}{g['sep']}{g['deg']}{reading.unit}", state.label, age]
         ]
     if state.cause is None:
         return [[f"{state.label}{g['sep']}fetching{g['more']}"]]
-    return [[f"{state.label}{g['sep']}{state.cause}"]]
+    return [[g["sep"].join((state.label, state.cause, retry_text(state, mono, g)))]]
 
 
-def pick_layout(state, cols, rows, caps):
+def pick_layout(state, mono, cols, rows, caps):
     """The largest layout that fits the pane, or [] for a blank pane."""
-    for lines in layouts(state, caps):
+    for lines in layouts(state, mono, caps):
         if max(len(line) for line in lines) <= cols and len(lines) <= rows:
             return lines
     return []
@@ -390,7 +426,7 @@ def build_frame(state, mono, cols, rows, caps):
     are all inputs. The block of lines is centered as a whole, and each line
     is centered on its own within it.
     """
-    lines = pick_layout(state, cols, rows, caps)
+    lines = pick_layout(state, mono, cols, rows, caps)
     cells = [[" "] * cols for _ in range(rows)]
     top = (rows - len(lines)) // 2
     for i, line in enumerate(lines):
@@ -518,34 +554,38 @@ def step(state, args):
     Returns the new state, or NO_MATCH."""
     if state.place is None:
         result = geocode_result(http_get(geocode_url(args.place)))
+        now = Now(time.time(), time.monotonic())
         if result is NO_MATCH:
             return NO_MATCH
-        return failed(state, result.cause) if isinstance(result, Failure) else resolved(state, result)
+        return failed(state, result.cause, now) if isinstance(result, Failure) else resolved(state, result, now)
     outcome = http_get(forecast_url(state.place, args.units))
-    result = forecast_result(outcome, UNITS[args.units][0], time.monotonic())
-    return failed(state, result.cause) if isinstance(result, Failure) else fetched(state, result)
+    now = Now(time.time(), time.monotonic())
+    result = forecast_result(outcome, UNITS[args.units][0], now.mono)
+    return failed(state, result.cause, now) if isinstance(result, Failure) else fetched(state, result, now)
 
 
 def run_pane(args, caps, wake_fd):
-    """Draw frames until a signal ends the app. Returns NO_MATCH if
-    geocoding finds nothing, or None if the pty goes away."""
+    """Draw a frame a second, fetching whenever one is due, until a signal
+    ends the app. Returns NO_MATCH if geocoding finds nothing, or None if
+    the pty goes away."""
     global resized
     state = initial_state(args.place)
-    tried = False
     while True:
         # Take the flag before reading the size, so a resize that lands
         # mid-frame is still seen, and cleared for, next time round.
         was_resized, resized = resized, False
         cols, rows = get_pane_size()
-        frame = build_frame(state, time.monotonic(), cols, rows, caps)
+        mono = time.monotonic()
+        frame = build_frame(state, mono, cols, rows, caps)
         if was_resized:
             frame = CLEAR + frame
         try:
             write_out(frame)
         except OSError:
             return None  # the pty is gone
-        if not tried or state.place is not None and state.reading is None and state.cause is None:
-            tried = True
+        if is_due(state, mono):
+            # The frame just drawn stays up while the fetch blocks. Draw the
+            # outcome straight away, then go back to whole seconds.
             state = step(state, args)
             if state is NO_MATCH:
                 return NO_MATCH
