@@ -44,6 +44,27 @@ Difficulty is relative to the clock, which is the baseline.
   - v2: feels-like, high/low, wind, humidity, precipitation,
     condition icons, themes, on-disk cache
 
+  v2 notes, not yet scoped (grill before spec):
+  - Data: the existing forecast request can return everything
+    below, so no new calls. Current: `apparent_temperature`,
+    `relative_humidity_2m`, `wind_speed_10m`,
+    `wind_direction_10m`, `wind_gusts_10m`, `cloud_cover`,
+    `precipitation`, `is_day`. Daily (`forecast_days=1`,
+    `timezone=auto`): `temperature_2m_max`/`_min`, `sunrise`,
+    `sunset`, `precipitation_probability_max`, `uv_index_max`.
+    Hourly (e.g. a temperature sparkline) is possible but a
+    bigger layout change
+  - Icons: five states from the WMO codes already mapped. Clear
+    (0–1; moon when `is_day` is 0), cloudy (2–3, fog 45–48), rain
+    (drizzle, rain, showers), snow (71–77, 85–86), storm (95–99)
+  - Effects: falling drops/flakes, reusing the clock's rain
+    approach by copy, not a shared module
+  - Open questions: where the icon sits beside the big digits;
+    which extra fields get a line and what each size tier drops;
+    ASCII and NO_COLOR icons; frame rate while animating, and
+    whether animation stops when the Reading is Stale; `is_day`
+    alone vs sunrise/sunset for day and night
+
   In progress: #12
 
   After weather, the ambient scaffold (setup/loop/teardown)
