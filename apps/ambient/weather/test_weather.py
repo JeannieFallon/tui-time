@@ -503,6 +503,63 @@ class ScheduleTest(unittest.TestCase):
         self.assertTrue(weather.is_due(state, T0 + 60))
 
 
+class FakeHttp:
+    """Stands in for http_get: answers geocoding and forecast URLs with
+    canned outcomes, and remembers the URLs it was asked for."""
+
+    def __init__(self, geocode=LISBON_JSON, forecast=None):
+        self.geocode = geocode
+        self.forecast = forecast if forecast is not None else forecast_json()
+        self.urls = []
+
+    def __call__(self, url):
+        self.urls.append(url)
+        return self.geocode if "geocoding" in url else self.forecast
+
+
+class PlainOutputTest(unittest.TestCase):
+    def run_plain(self, http, argv=("Lisbon",), unicode=True):
+        out, err = StringIO(), StringIO()
+        with redirect_stderr(err):
+            code = weather.run_plain(weather.parse_args(list(argv)), http, unicode, out)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_success_prints_one_plain_line_and_exits_0(self):
+        code, out, err = self.run_plain(FakeHttp())
+        self.assertEqual((code, out, err), (0, "Lisbon, Lisbon District, PT 12°C Light rain\n", ""))
+        self.assertNotIn("\033", out)
+
+    def test_imperial_units(self):
+        http = FakeHttp(forecast=forecast_json(70.4, 0, "°F"))
+        code, out, _ = self.run_plain(http, ["Lisbon", "--units", "imperial"])
+        self.assertEqual((code, out), (0, "Lisbon, Lisbon District, PT 70°F Clear\n"))
+        self.assertIn("temperature_unit=fahrenheit", http.urls[-1])
+
+    def test_ascii_line_drops_the_degree_sign(self):
+        _, out, _ = self.run_plain(FakeHttp(), unicode=False)
+        self.assertEqual(out, "Lisbon, Lisbon District, PT 12C Light rain\n")
+
+    def test_failures_exit_1_with_the_cause_on_stderr(self):
+        cases = [
+            (FakeHttp(geocode=urllib.error.URLError(socket.gaierror(-3, "x"))), "offline"),
+            (FakeHttp(forecast=urllib.error.HTTPError("u", 503, "x", {}, None)), "HTTP 503"),
+            (FakeHttp(forecast=b"nope"), "bad response"),
+        ]
+        for http, cause in cases:
+            with self.subTest(cause=cause):
+                code, out, err = self.run_plain(http)
+                self.assertEqual((code, out), (1, ""))
+                self.assertIn(cause, err)
+
+    def test_no_match_exits_2_with_a_usage_error(self):
+        err = StringIO()
+        with redirect_stderr(err), self.assertRaises(SystemExit) as exit:
+            weather.run_plain(weather.parse_args(["Nowhere"]), FakeHttp(geocode=NO_MATCH_JSON), True, StringIO())
+        self.assertEqual(exit.exception.code, 2)
+        self.assertIn("usage:", err.getvalue())
+        self.assertIn("Nowhere", err.getvalue())
+
+
 class ArgumentParsingTest(unittest.TestCase):
     def parse_error(self, argv):
         err = StringIO()

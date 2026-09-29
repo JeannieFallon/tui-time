@@ -594,19 +594,40 @@ def handle_winch(signum, frame):
     resized = True
 
 
-def step(state, args):
-    """Fetch whatever the state needs next: the place, then a Reading.
-    Returns the new state, or NO_MATCH."""
+def step(state, args, get):
+    """Fetch whatever the state needs next, the place and then a Reading,
+    with get (http_get, or a stand-in). Returns the new state, or NO_MATCH."""
     if state.place is None:
-        result = geocode_result(http_get(geocode_url(args.place)))
+        result = geocode_result(get(geocode_url(args.place)))
         now = Now(time.time(), time.monotonic())
         if result is NO_MATCH:
             return NO_MATCH
         return failed(state, result.cause, now) if isinstance(result, Failure) else resolved(state, result, now)
-    outcome = http_get(forecast_url(state.place, args.units))
+    outcome = get(forecast_url(state.place, args.units))
     now = Now(time.time(), time.monotonic())
     result = forecast_result(outcome, UNITS[args.units][0], now.mono)
     return failed(state, result.cause, now) if isinstance(result, Failure) else fetched(state, result, now)
+
+
+def one_line(label, reading, unicode):
+    """The Reading as one plain line, for when stdout isn't a tty."""
+    deg = TEXT_GLYPHS[unicode]["deg"]
+    return f"{label} {whole_degrees(reading.temperature)}{deg}{reading.unit} {reading.condition}"
+
+
+def run_plain(args, get, unicode, out):
+    """Geocode, fetch once and print one line to out. Returns the exit
+    status: 0, or 1 with the cause on stderr. No match exits 2."""
+    state = initial_state(args.place)
+    while state.reading is None:
+        state = step(state, args, get)
+        if state is NO_MATCH:
+            no_match_error(args.place)
+        if state.cause is not None:
+            print(f"{os.path.basename(sys.argv[0])}: {state.cause}", file=sys.stderr)
+            return 1
+    print(one_line(state.label, state.reading, unicode), file=out)
+    return 0
 
 
 def run_pane(args, caps, wake_fd):
@@ -632,7 +653,7 @@ def run_pane(args, caps, wake_fd):
         if is_due(state, mono):
             # The frame just drawn stays up while the fetch blocks. Draw the
             # outcome straight away, then go back to whole seconds.
-            state = step(state, args)
+            state = step(state, args, http_get)
             if state is NO_MATCH:
                 return NO_MATCH
             continue
@@ -642,6 +663,8 @@ def run_pane(args, caps, wake_fd):
 def main():
     args = parse_args(sys.argv[1:])
     caps = detect_caps()
+    if not sys.stdout.isatty():
+        sys.exit(run_plain(args, http_get, caps.unicode, sys.stdout))
 
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
