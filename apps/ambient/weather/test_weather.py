@@ -290,6 +290,122 @@ class AgeLineTest(unittest.TestCase):
         self.assertEqual(self.age_line(state, 17 * 60), "updated 1m ago")
 
 
+def lines_of(frame):
+    """The frame's non-blank lines, stripped."""
+    return [line.strip() for line in grid(frame) if line.strip()]
+
+
+class SizeTierTest(unittest.TestCase):
+    # For reading_state() at T0: the label is 27 wide, the big digits "12°"
+    # 16 wide and 5 rows (10 in ASCII), so big needs 27x9 (27x14 in ASCII).
+    COMPACT_AGE = ["12°C Light rain", "updated just now"]
+    COMPACT = ["12°C Light rain"]
+    MINIMAL = ["12°C"]
+
+    def tier(self, state, cols, rows, caps=UNICODE, mono=T0):
+        return lines_of(weather.build_frame(state, mono, cols, rows, caps))
+
+    def big(self, caps):
+        return self.tier(reading_state(), 80, 24, caps)
+
+    def test_big_tier_is_digits_condition_location_and_age(self):
+        lines = self.big(UNICODE)
+        self.assertEqual(len(lines), 8)  # 5 digit rows, then 3 text lines; the blank row is stripped
+        self.assertEqual(lines[5:], ["Light rain · °C", "Lisbon, Lisbon District, PT", "updated just now"])
+
+    def test_reading_tiers_at_exact_thresholds(self):
+        cases = [
+            (27, 9, "big"),
+            (26, 9, self.COMPACT_AGE),
+            (27, 8, self.COMPACT_AGE),
+            (16, 2, self.COMPACT_AGE),
+            (15, 2, self.COMPACT),
+            (16, 1, self.COMPACT),
+            (15, 1, self.COMPACT),
+            (14, 5, self.MINIMAL),
+            (4, 1, self.MINIMAL),
+            (3, 1, []),
+            (3, 20, []),
+        ]
+        for cols, rows, expected in cases:
+            with self.subTest(cols=cols, rows=rows):
+                self.assertEqual(self.tier(reading_state(), cols, rows), self.big(UNICODE) if expected == "big" else expected)
+
+    def test_ascii_reading_tiers_at_exact_thresholds(self):
+        cases = [
+            (27, 14, "big"),
+            (27, 13, ["12C Light rain", "updated just now"]),
+            (14, 1, ["12C Light rain"]),
+            (13, 1, ["12C"]),
+            (3, 1, ["12C"]),
+            (2, 1, []),
+        ]
+        for cols, rows, expected in cases:
+            with self.subTest(cols=cols, rows=rows):
+                self.assertEqual(self.tier(reading_state(), cols, rows, ASCII), self.big(ASCII) if expected == "big" else expected)
+
+    def test_failure_text_shrinks_with_the_pane(self):
+        state = weather.failed(weather.initial_state("springfield"), "offline", NOW0)
+        full = "springfield · offline · retry in 1m"  # 35 wide
+        for cols, expected in [(35, [full]), (34, ["offline"]), (7, ["offline"]), (6, ["!"]), (1, ["!"])]:
+            with self.subTest(cols=cols):
+                self.assertEqual(self.tier(state, cols, 1), expected)
+        self.assertEqual(self.tier(state, 0, 1), [])
+        http = weather.failed(weather.initial_state("x"), "HTTP 503", NOW0)
+        self.assertEqual(self.tier(http, 8, 1), ["HTTP 503"])
+        self.assertEqual(self.tier(http, 7, 1), ["!"])
+
+    def test_fetching_text_shrinks_with_the_pane(self):
+        state = weather.initial_state("springfield")
+        for cols, expected in [(23, ["springfield · fetching…"]), (22, ["fetching…"]), (9, ["fetching…"]), (8, [])]:
+            with self.subTest(cols=cols):
+                self.assertEqual(self.tier(state, cols, 3), expected)
+
+    def test_reading_with_a_failure_keeps_the_cause_on_the_age_line(self):
+        state = weather.failed(reading_state(), "offline", at(20 * 60))
+        self.assertEqual(
+            self.tier(state, 30, 3, mono=T0 + 20 * 60),
+            ["12°C Light rain", "updated 20m ago · offline"],
+        )
+
+    def test_stale_reading_is_dimmed_in_every_tier(self):
+        stale = T0 + 45 * 60
+        for cols, rows in [(80, 24), (20, 2), (15, 1), (4, 1)]:
+            with self.subTest(cols=cols, rows=rows):
+                self.assertIn(DIM, weather.build_frame(reading_state(), stale, cols, rows, UNICODE))
+
+    def states(self):
+        """(state, time, how many distinct layouts it has, blank included)."""
+        return [
+            (reading_state(), T0, 5),
+            (reading_state(-104.0, "Thunderstorm, hail", "F"), T0 + 45 * 60, 5),
+            (weather.failed(reading_state(), "bad response", at(20 * 60)), T0 + 20 * 60, 5),
+            (weather.initial_state("springfield"), T0, 3),
+            # "!" fits any pane at least 1x1, so blank never shows here.
+            (weather.failed(weather.initial_state("springfield"), "HTTP 503", NOW0), T0, 3),
+        ]
+
+    def test_frames_cover_every_cell_and_never_clip(self):
+        for caps in (UNICODE, ASCII):
+            for state, mono, count in self.states():
+                seen = set()
+                for cols in range(1, 60):
+                    for rows in range(1, 16):
+                        frame = weather.build_frame(state, mono, cols, rows, caps)
+                        with self.subTest(unicode=caps.unicode, state=state.label, cols=cols, rows=rows):
+                            self.assertEqual([len(line) for line in grid(frame)], [cols] * rows)
+                        seen.add(tuple(lines_of(frame)))
+                # A clipped layout would show up as an extra distinct layout.
+                with self.subTest(unicode=caps.unicode, state=state.label):
+                    self.assertEqual(len(seen), count, seen)
+
+    def test_ascii_frames_are_pure_ascii(self):
+        for state, mono, _ in self.states():
+            for cols, rows in [(80, 24), (30, 14), (20, 2), (15, 1), (4, 1), (1, 1)]:
+                with self.subTest(state=state.label, cols=cols, rows=rows):
+                    self.assertTrue(weather.build_frame(state, mono, cols, rows, ASCII).isascii())
+
+
 MIN, HOUR = 60, 3600
 DIM = "\033[2m"
 

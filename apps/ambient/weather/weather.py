@@ -418,28 +418,37 @@ def retry_text(state, mono, g):
 
 def layouts(state, mono, caps):
     """Candidate layouts, largest first. Each is a list of (text, dim) lines;
-    dim marks the lines of a Stale Reading."""
+    dim marks the lines of a Stale Reading.
+
+    With a Reading: big digits with the Condition, location and age lines;
+    the temperature and Condition on one line, with the age under it; that
+    line alone; the temperature alone. Without one: the label, cause and
+    retry countdown on one line; the cause alone; "!". While fetching: the
+    label and "fetching…"; "fetching…" alone.
+    """
     g = TEXT_GLYPHS[caps.unicode]
     state = expire(state, mono)
     reading = state.reading
     if reading is not None:
         stale = freshness(reading, mono) is STALE
+        degrees = whole_degrees(reading.temperature)
+        temperature = f"{degrees}{g['deg']}{reading.unit}"
+        compact = (f"{temperature} {reading.condition}", stale)
         age = f"updated {age_text(mono - reading.fetched_at)}"
         if state.cause is not None:
             age += g["sep"] + state.cause
-        digits = big_text(whole_degrees(reading.temperature) + "°", caps)
-        return [
-            [(line, stale) for line in digits]
-            + [
-                ("", False),
-                (f"{reading.condition}{g['sep']}{g['deg']}{reading.unit}", stale),
-                (state.label, False),
-                (age, False),
-            ]
+        big = [(line, stale) for line in big_text(degrees + "°", caps)] + [
+            ("", False),
+            (f"{reading.condition}{g['sep']}{g['deg']}{reading.unit}", stale),
+            (state.label, False),
+            (age, False),
         ]
+        return [big, [compact, (age, False)], [compact], [(temperature, stale)]]
     if state.cause is None:
-        return [[(f"{state.label}{g['sep']}fetching{g['more']}", False)]]
-    return [[(g["sep"].join((state.label, state.cause, retry_text(state, mono, g))), False)]]
+        fetching = f"fetching{g['more']}"
+        return [[(state.label + g["sep"] + fetching, False)], [(fetching, False)]]
+    full = g["sep"].join((state.label, state.cause, retry_text(state, mono, g)))
+    return [[(full, False)], [(state.cause, False)], [("!", False)]]
 
 
 def pick_layout(state, mono, cols, rows, caps):
