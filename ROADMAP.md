@@ -24,26 +24,29 @@ Difficulty is relative to the clock, which is the baseline.
   `--units imperial`.
   Shipped: #19
 
-## Next
-
-- **weather v2** (ambient) — feels-like, today's high/low,
-  wind and precipitation chance as two detail lines; a static
-  icon per Sky (Clear with a night moon, Cloudy, Rain, Snow,
-  Storm); falling drops or flakes as an Effect while the Reading
-  is Fresh. New top size tier, with v1's tiers kept below it.
-  Fetch stays synchronous, so the Effect stalls during fetches;
-  this is accepted. Out: humidity, UV, sunrise/sunset, hourly
+- **weather v2** (ambient) — feels-like, today's high/low, wind
+  and precipitation chance as two detail lines; a static icon per
+  Sky (Clear with a night moon, Cloudy, Rain, Snow, Storm);
+  falling drops or flakes as an Effect while the Reading is Fresh,
+  at 8 fps. Two new top size tiers (full, big with icon), with
+  v1's tiers kept below them. Fetch stays synchronous, so the
+  Effect stalls during fetches; this is accepted. `simulate.py`
+  runs the pane with a fake network for checking icons and
+  Effects by hand. Out: humidity, UV, sunrise/sunset, hourly
   sparkline, `--theme`, on-disk cache (still a candidate for a
   later version).
-  In progress: #20
+  Shipped: #25
+
+## Next
 
 - **ping** (ambient) — latency to a host as a scrolling
   sparkline. Difficulty: low. Establishes the ring buffer pattern
   that resource-viz reuses.
 
   The ambient scaffold (setup/loop/teardown) exists twice, in
-  clock and weather. Ping is the third ambient app: decide there
-  whether to extract it.
+  clock and weather, and so does the rain Effect (clock's `rain`
+  theme, weather's drops). Ping is the third ambient app: decide
+  there whether to extract the scaffold.
 
 - **resource-viz** (ambient) — abstract visualization of system
   load. Difficulty: moderate. v1 is CPU only, one visual
