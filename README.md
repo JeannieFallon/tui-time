@@ -3,7 +3,7 @@
 Small terminal apps to jazz up idle panes. Each app is a single Python
 file with no dependencies beyond the standard library.
 
-![The clock running in four tmux panes, one per theme: plain, night with stars, rain with falling drops, and wave with a moving color gradient](res/clock_demo.gif)
+![Four tmux panes: the clock with the night theme's stars, weather for Washington, D.C. with a moon icon on a clear night, the clock with the wave theme's color gradient, and weather for Tokyo with a rain icon and drops falling around it](res/clock-weather_demo.gif)
 
 ## Apps
 
