@@ -3,11 +3,13 @@
 import http.client
 import json
 import os
+import random
 import re
 import socket
 import sys
 import unittest
 import urllib.error
+import urllib.parse
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 
@@ -33,6 +35,7 @@ LISBON_JSON = json.dumps(
     }
 ).encode()
 NO_MATCH_JSON = b'{"generationtime_ms":0.49}'
+MISSING = object()  # marks a field left out of a response
 
 
 def forecast_json(temperature=12.3, code=61, unit="°C"):
@@ -44,6 +47,37 @@ def forecast_json(temperature=12.3, code=61, unit="°C"):
             "current": {"time": "2026-09-29T21:30", "interval": 900, "temperature_2m": temperature, "weather_code": code},
         }
     ).encode()
+
+
+FULL_CURRENT = {
+    "time": "2026-09-29T21:30",
+    "interval": 900,
+    "temperature_2m": 12.3,
+    "weather_code": 61,
+    "apparent_temperature": 9.4,
+    "wind_speed_10m": 12.2,
+    "wind_direction_10m": 310,
+    "is_day": 1,
+}
+FULL_DAILY = {
+    "time": ["2026-09-29"],
+    "temperature_2m_max": [14.2],
+    "temperature_2m_min": [6.6],
+    "precipitation_probability_max": [40],
+}
+
+
+def full_forecast_json(**fields):
+    """A forecast response with every field. A keyword replaces one field
+    (None for null), or leaves it out when MISSING."""
+    current, daily = dict(FULL_CURRENT), dict(FULL_DAILY)
+    for key, value in fields.items():
+        target = current if key in current else daily
+        if value is MISSING:
+            del target[key]
+        else:
+            target[key] = value if target is current else [value]
+    return json.dumps({"latitude": 38.75, "longitude": -9.125, "current": current, "daily": daily}).encode()
 
 
 class GeocodeResultTest(unittest.TestCase):
@@ -73,7 +107,61 @@ class GeocodeResultTest(unittest.TestCase):
 class ForecastResultTest(unittest.TestCase):
     def test_current_conditions_become_a_reading_fetched_at_the_given_time(self):
         reading = weather.forecast_result(forecast_json(12.3, 61), "C", fetched_at=500.0)
-        self.assertEqual(reading, weather.Reading(12.3, "Light rain", "C", 500.0))
+        self.assertEqual(reading, weather.Reading(12.3, "Light rain", "C", 500.0, sky=weather.Sky.RAIN))
+
+    def test_every_field_becomes_part_of_the_reading(self):
+        reading = weather.forecast_result(full_forecast_json(), "C", fetched_at=500.0)
+        self.assertEqual(
+            reading,
+            weather.Reading(
+                12.3,
+                "Light rain",
+                "C",
+                500.0,
+                sky=weather.Sky.RAIN,
+                is_day=True,
+                feels=9.4,
+                high=14.2,
+                low=6.6,
+                wind_speed=12.2,
+                wind_direction=310.0,
+                rain=40.0,
+            ),
+        )
+
+    def test_each_new_field_missing_or_null_leaves_only_that_item_out(self):
+        full = weather.forecast_result(full_forecast_json(), "C", 0.0)
+        fields = {
+            "apparent_temperature": "feels",
+            "temperature_2m_max": "high",
+            "temperature_2m_min": "low",
+            "precipitation_probability_max": "rain",
+            "wind_speed_10m": "wind_speed",
+            "wind_direction_10m": "wind_direction",
+        }
+        for key, attr in fields.items():
+            for value in (MISSING, None, "windy"):
+                with self.subTest(key=key, value=value):
+                    reading = weather.forecast_result(full_forecast_json(**{key: value}), "C", 0.0)
+                    self.assertEqual(reading, full._replace(**{attr: None}))
+
+    def test_missing_or_null_is_day_counts_as_day(self):
+        for value in (MISSING, None):
+            with self.subTest(value=value):
+                self.assertTrue(weather.forecast_result(full_forecast_json(is_day=value), "C", 0.0).is_day)
+        self.assertFalse(weather.forecast_result(full_forecast_json(is_day=0), "C", 0.0).is_day)
+
+    def test_missing_or_malformed_daily_block_leaves_only_the_daily_items_out(self):
+        full = weather.forecast_result(full_forecast_json(), "C", 0.0)
+        daily_absent = full._replace(high=None, low=None, rain=None)
+        for daily in (MISSING, None, [], {"temperature_2m_max": []}, {"temperature_2m_max": 14.2}):
+            with self.subTest(daily=daily):
+                body = json.loads(full_forecast_json())
+                if daily is MISSING:
+                    del body["daily"]
+                else:
+                    body["daily"] = daily
+                self.assertEqual(weather.forecast_result(json.dumps(body).encode(), "C", 0.0), daily_absent)
 
     def test_unknown_weather_code_maps_to_a_generic_condition(self):
         self.assertEqual(weather.forecast_result(forecast_json(code=42), "C", 0.0).condition, "Unknown")
@@ -148,8 +236,9 @@ def resolved_state():
     return weather.resolved(weather.initial_state("lisbon"), LISBON, NOW0)
 
 
-def reading_state(temperature=12.3, condition="Light rain", unit="C"):
-    return weather.fetched(resolved_state(), weather.Reading(temperature, condition, unit, T0), NOW0)
+def reading_state(temperature=12.3, condition="Light rain", unit="C", **fields):
+    reading = weather.Reading(temperature, condition, unit, T0, **fields)
+    return weather.fetched(resolved_state(), reading, NOW0)
 
 
 def drawn_box(cells):
@@ -229,9 +318,369 @@ class ReadingFrameTest(unittest.TestCase):
 
     def test_no_color_escapes_when_color_is_disabled(self):
         for unicode in (True, False):
-            caps = weather.Caps(color=False, unicode=unicode)
-            with self.subTest(unicode=unicode):
-                self.assertIsNone(SGR.search(weather.build_frame(reading_state(), T0, 80, 24, caps)))
+            for state in (reading_state(), reading_state(sky=weather.Sky.STORM), reading_state(sky=weather.Sky.CLEAR, is_day=False)):
+                caps = weather.Caps(color=False, unicode=unicode)
+                with self.subTest(unicode=unicode, sky=state.reading.sky):
+                    self.assertIsNone(SGR.search(weather.build_frame(state, T0, 80, 24, caps)))
+
+
+UNDIM = "\033[22m"
+TOKEN = re.compile(r"\033\[[0-9;?]*[A-Za-z]|.")
+
+
+def styled(frame):
+    """The frame as rows of (char, color, dim) cells, with color a 256-color
+    index or None for the terminal default."""
+    assert frame.startswith("\033[H"), "frame must start with cursor-home"
+    rows, color, dim = [], None, False
+    for line in frame[len("\033[H") :].split("\r\n"):
+        row = []
+        for token in TOKEN.findall(line):
+            if token == DIM:
+                dim = True
+            elif token == UNDIM:
+                dim = False
+            elif token.startswith("\033[38;5;"):
+                color = int(token[len("\033[38;5;") : -1])
+            elif token == "\033[39m":
+                color = None
+            elif not token.startswith("\033"):
+                row.append((token, color, dim))
+        rows.append(row)
+    return rows
+
+
+def icon_colors(state, mono=T0, caps=UNICODE):
+    """The colors of the frame's colored cells: those of its icon."""
+    return {color for row in styled(weather.build_frame(state, mono, 80, 24, caps)) for ch, color, _ in row if color is not None}
+
+
+# Each Condition's Sky, from the spec.
+EXPECTED_SKIES = {
+    **dict.fromkeys((0, 1), weather.Sky.CLEAR),
+    **dict.fromkeys((2, 3, 45, 48), weather.Sky.CLOUDY),
+    **dict.fromkeys((51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82), weather.Sky.RAIN),
+    **dict.fromkeys((71, 73, 75, 77, 85, 86), weather.Sky.SNOW),
+    **dict.fromkeys((95, 96, 99), weather.Sky.STORM),
+}
+SKIES = (weather.Sky.CLEAR, weather.Sky.CLOUDY, weather.Sky.RAIN, weather.Sky.SNOW, weather.Sky.STORM)
+
+
+class SkyTest(unittest.TestCase):
+    def test_every_condition_has_its_sky(self):
+        self.assertEqual(set(EXPECTED_SKIES), set(weather.CONDITIONS))
+        for code, sky in EXPECTED_SKIES.items():
+            with self.subTest(code=code):
+                self.assertEqual(weather.forecast_result(forecast_json(code=code), "C", 0.0).sky, sky)
+
+    def test_unknown_code_has_no_sky_and_no_icon(self):
+        for code in (-1, 4, 42, 50, 100):
+            with self.subTest(code=code):
+                self.assertIsNone(weather.forecast_result(forecast_json(code=code), "C", 0.0).sky)
+        reading = weather.forecast_result(forecast_json(code=42), "C", T0)
+        frame = weather.build_frame(weather.fetched(resolved_state(), reading, NOW0), T0, 80, 24, ASCII)
+        self.assertEqual(big_rows(frame), big_rows(weather.build_frame(reading_state(), T0, 80, 24, ASCII)))
+
+
+class IconTest(unittest.TestCase):
+    def icon(self, caps=ASCII, **fields):
+        """The icon's rows: the big rows left of the digits."""
+        rows = big_rows(weather.build_frame(reading_state(**fields), T0, 80, 24, caps))
+        digits = big_rows(weather.build_frame(reading_state(), T0, 80, 24, caps))
+        width = len(digits[0])
+        self.assertEqual([row[-width:] for row in rows], digits)
+        return [row[:-width] for row in rows]
+
+    def test_icon_sits_left_of_the_digits(self):
+        for sky in SKIES:
+            with self.subTest(sky=sky):
+                icon = self.icon(sky=sky)
+                self.assertTrue(any("#" in row for row in icon))
+                self.assertTrue(all(row.endswith(" ") for row in icon))  # a gap before the digits
+
+    def test_ascii_icons_are_ten_rows_like_the_digits(self):
+        for sky in SKIES:
+            for is_day in (True, False):
+                with self.subTest(sky=sky, is_day=is_day):
+                    self.assertEqual(len(self.icon(sky=sky, is_day=is_day)), 10)
+
+    def test_unicode_icons_are_five_rows_like_the_digits(self):
+        for sky in SKIES:
+            with self.subTest(sky=sky):
+                cells = styled(weather.build_frame(reading_state(sky=sky), T0, 80, 24, UNICODE))
+                icon_rows = [r for r, row in enumerate(cells) if any(color is not None for _, color, _ in row)]
+                self.assertLessEqual(max(icon_rows) - min(icon_rows) + 1, 5)
+                digit_rows = [r for r, row in enumerate(cells) if any(ch in "█▀▄" and color is None for ch, color, _ in row)]
+                self.assertEqual(len(digit_rows), 5)
+                self.assertTrue(set(icon_rows) <= set(digit_rows))
+
+    def test_clear_at_night_is_a_moon_and_no_other_sky_changes(self):
+        self.assertNotEqual(self.icon(sky=weather.Sky.CLEAR, is_day=False), self.icon(sky=weather.Sky.CLEAR))
+        self.assertNotEqual(icon_colors(reading_state(sky=weather.Sky.CLEAR, is_day=False)), icon_colors(reading_state(sky=weather.Sky.CLEAR)))
+        for sky in SKIES[1:]:
+            with self.subTest(sky=sky):
+                self.assertEqual(self.icon(sky=sky, is_day=False), self.icon(sky=sky))
+
+    def test_icons_are_colored_by_sky_and_the_digits_are_not(self):
+        sun = icon_colors(reading_state(sky=weather.Sky.CLEAR))
+        self.assertEqual(len(sun), 1)
+        self.assertEqual(len(icon_colors(reading_state(sky=weather.Sky.CLOUDY))), 1)
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW, weather.Sky.STORM):
+            with self.subTest(sky=sky):
+                self.assertEqual(len(icon_colors(reading_state(sky=sky))), 2)  # a cloud and what falls from it
+        self.assertTrue(sun < icon_colors(reading_state(sky=weather.Sky.STORM)))  # the bolt is the sun's yellow
+        self.assertEqual(icon_colors(reading_state(sky=weather.Sky.RAIN), caps=ASCII), icon_colors(reading_state(sky=weather.Sky.RAIN)))
+
+    def test_a_stale_reading_dims_the_icon(self):
+        for mono, dim in ((T0, False), (T0 + 30 * MIN, True)):
+            with self.subTest(dim=dim):
+                cells = styled(weather.build_frame(reading_state(sky=weather.Sky.STORM), mono, 80, 24, UNICODE))
+                self.assertEqual({d for row in cells for ch, color, d in row if color is not None}, {dim})
+
+
+FULL_FIELDS = dict(sky=weather.Sky.RAIN, feels=9.4, high=14.2, low=6.6, wind_speed=12.2, wind_direction=310.0, rain=40.0)
+
+
+def full_state(unit="C", **fields):
+    """A Reading with a Sky and every detail, with fields overriding them."""
+    return reading_state(unit=unit, **{**FULL_FIELDS, **fields})
+
+
+class DetailLinesTest(unittest.TestCase):
+    def details(self, state, caps=UNICODE, mono=T0):
+        """The lines between the Condition line and the location line."""
+        lines = lines_of(weather.build_frame(state, mono, 80, 24, caps))
+        condition = next(i for i, line in enumerate(lines) if line.startswith("Light rain"))
+        return lines[condition + 1 : lines.index("Lisbon, Lisbon District, PT")]
+
+    def test_two_detail_lines_at_full_data(self):
+        self.assertEqual(self.details(full_state()), ["feels 9° · H 14° L 7°", "wind 12 km/h NW · rain 40%"])
+
+    def test_a_missing_field_drops_only_its_item(self):
+        cases = [
+            (dict(feels=None), ["H 14° L 7°", "wind 12 km/h NW · rain 40%"]),
+            (dict(high=None), ["feels 9° · L 7°", "wind 12 km/h NW · rain 40%"]),
+            (dict(low=None), ["feels 9° · H 14°", "wind 12 km/h NW · rain 40%"]),
+            (dict(high=None, low=None), ["feels 9°", "wind 12 km/h NW · rain 40%"]),
+            (dict(wind_direction=None), ["feels 9° · H 14° L 7°", "wind 12 km/h · rain 40%"]),
+            (dict(wind_speed=None), ["feels 9° · H 14° L 7°", "rain 40%"]),
+            (dict(rain=None), ["feels 9° · H 14° L 7°", "wind 12 km/h NW"]),
+            (dict(feels=None, high=None, low=None), ["wind 12 km/h NW · rain 40%"]),
+            (dict(wind_speed=None, rain=None), ["feels 9° · H 14° L 7°"]),
+            (dict(feels=None, high=None, low=None, wind_speed=None, rain=None), []),
+        ]
+        for fields, expected in cases:
+            with self.subTest(fields=fields):
+                self.assertEqual(self.details(full_state(**fields)), expected)
+
+    def test_temperatures_round_like_the_big_temperature(self):
+        state = full_state(feels=-0.4, high=12.5, low=-3.5)
+        self.assertEqual(self.details(state)[0], "feels 0° · H 13° L -4°")
+
+    def test_wind_below_1_is_calm_with_no_direction(self):
+        for speed, expected in [(0.0, "wind calm"), (0.49, "wind calm"), (0.5, "wind 1 km/h NW"), (1.4, "wind 1 km/h NW")]:
+            with self.subTest(speed=speed):
+                self.assertEqual(self.details(full_state(wind_speed=speed, rain=None))[1], expected)
+        self.assertEqual(self.details(full_state(wind_speed=0.2, wind_direction=None))[1], "wind calm · rain 40%")
+
+    def test_wind_direction_is_an_8_point_compass(self):
+        cases = [
+            (0, "N"),
+            (22.4, "N"),
+            (22.5, "NE"),
+            (45, "NE"),
+            (90, "E"),
+            (135, "SE"),
+            (180, "S"),
+            (225, "SW"),
+            (270, "W"),
+            (315, "NW"),
+            (337.4, "NW"),
+            (337.5, "N"),
+            (359.9, "N"),
+            (360, "N"),
+        ]
+        for degrees, point in cases:
+            with self.subTest(degrees=degrees):
+                self.assertEqual(self.details(full_state(wind_direction=degrees, rain=None))[1], f"wind 12 km/h {point}")
+
+    def test_imperial_wind_is_in_mph(self):
+        state = full_state("F", feels=48.2, high=57.6, low=44.0, wind_speed=7.6)
+        self.assertEqual(self.details(state), ["feels 48° · H 58° L 44°", "wind 8 mph NW · rain 40%"])
+
+    def test_ascii_drops_the_degree_sign_and_uses_a_plain_separator(self):
+        self.assertEqual(self.details(full_state(), ASCII), ["feels 9 - H 14 L 7", "wind 12 km/h NW - rain 40%"])
+
+    def test_no_detail_lines_without_a_sky(self):
+        lines = lines_of(weather.build_frame(full_state(sky=None), T0, 80, 24, UNICODE))
+        self.assertFalse(any(line.startswith(("feels", "wind")) for line in lines))
+
+    def test_a_stale_reading_dims_the_detail_lines(self):
+        stale = weather.build_frame(full_state(), T0 + 30 * MIN, 80, 24, UNICODE)
+        dimmed = [CSI.sub("", part.split(UNDIM)[0]) for part in stale.split(DIM)[1:]]
+        self.assertIn("feels 9° · H 14° L 7°", dimmed)
+        self.assertIn("wind 12 km/h NW · rain 40%", dimmed)
+        self.assertNotIn(DIM, weather.build_frame(full_state(), T0, 80, 24, UNICODE))
+
+
+def block_box(cells):
+    """(top, left, bottom, right) of the drawn text and icon plus a 1-cell
+    margin."""
+    points = [(r, c) for r, line in enumerate(cells) for c, ch in enumerate(line) if ch != " "]
+    rs = [r for r, _ in points]
+    cs = [c for _, c in points]
+    return (min(rs) - 1, min(cs) - 1, max(rs) + 1, max(cs) + 1)
+
+
+class EffectTest(unittest.TestCase):
+    # A few seconds apart, and between frames, so the Effect is mid-motion.
+    TIMES = [T0 + 0.125 * i for i in range(8)] + [T0 + s for s in range(1, 60, 7)]
+    SIZES = [(80, 24), (40, 14), (120, 40), (29, 11), (31, 13)]
+
+    def frame(self, state, mono, cols, rows, caps=UNICODE, seed=1):
+        """A frame with the Effect seeded as the app seeds it."""
+        effect = weather.showing_effect(state, mono, cols, rows, caps)
+        seeded = effect.seed(cols, rows, random.Random(seed)) if effect else None
+        return weather.build_frame(state, mono, cols, rows, caps, seeded)
+
+    def drawn(self, state, mono, cols, rows, caps=UNICODE):
+        """Whether either Effect, seeded and passed in, changes the frame."""
+        plain = weather.build_frame(state, mono, cols, rows, caps)
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW):
+            effect = weather.showing_effect(full_state(sky=sky), T0, 80, 24, caps)
+            seeded = effect.seed(cols, rows, random.Random(1))
+            if weather.build_frame(state, mono, cols, rows, caps, seeded) != plain:
+                return True
+        return False
+
+    def test_drops_on_rain_and_storm_and_flakes_on_snow(self):
+        glyphs = {}
+        for sky in (weather.Sky.RAIN, weather.Sky.STORM, weather.Sky.SNOW):
+            with self.subTest(sky=sky):
+                state = full_state(sky=sky)
+                plain = grid(weather.build_frame(state, T0, 80, 24, UNICODE))
+                cells = grid(self.frame(state, T0, 80, 24))
+                glyphs[sky] = {a for row, base in zip(cells, plain) for a, b in zip(row, base) if a != b}
+                self.assertTrue(glyphs[sky])
+        self.assertEqual(glyphs[weather.Sky.RAIN], glyphs[weather.Sky.STORM])
+        self.assertIn("│", glyphs[weather.Sky.RAIN])
+        self.assertNotIn("*", glyphs[weather.Sky.RAIN])
+        self.assertIn("*", glyphs[weather.Sky.SNOW])
+        self.assertNotIn("│", glyphs[weather.Sky.SNOW])
+
+    def test_the_block_and_its_margin_are_never_drawn_over(self):
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW):
+            for caps in (UNICODE, ASCII):
+                for state in (full_state(sky=sky), reading_state(sky=sky), full_state(sky=sky, wind_speed=None, rain=None)):
+                    for cols, rows in self.SIZES:
+                        plain = grid(weather.build_frame(state, T0, cols, rows, caps))
+                        top, left, bottom, right = block_box(plain)
+                        for mono in self.TIMES:
+                            plain = grid(weather.build_frame(state, mono, cols, rows, caps))
+                            for seed in range(3):
+                                with self.subTest(sky=sky, unicode=caps.unicode, cols=cols, rows=rows, mono=mono, seed=seed):
+                                    cells = grid(self.frame(state, mono, cols, rows, caps, seed))
+                                    self.assertEqual([len(line) for line in cells], [cols] * rows)
+                                    for r in range(max(0, top), min(rows, bottom + 1)):
+                                        self.assertEqual(cells[r][left : right + 1], plain[r][left : right + 1])
+
+    def test_the_effect_moves(self):
+        state = full_state(sky=weather.Sky.SNOW)
+        self.assertNotEqual(self.frame(state, T0, 80, 24), self.frame(state, T0 + 1, 80, 24))
+
+    def test_no_effect_on_clear_cloudy_or_an_unknown_code(self):
+        for sky in (weather.Sky.CLEAR, weather.Sky.CLOUDY, None):
+            for is_day in (True, False):
+                with self.subTest(sky=sky, is_day=is_day):
+                    state = full_state(sky=sky, is_day=is_day)
+                    self.assertIsNone(weather.showing_effect(state, T0, 80, 24, UNICODE))
+                    self.assertFalse(self.drawn(state, T0, 80, 24))
+
+    def test_no_effect_once_the_reading_is_stale(self):
+        state = full_state()
+        self.assertIsNotNone(weather.showing_effect(state, T0 + 30 * MIN - 1, 80, 24, UNICODE))
+        for mono in (T0 + 30 * MIN, T0 + 2 * HOUR, T0 + 3 * HOUR):
+            with self.subTest(mono=mono):
+                self.assertIsNone(weather.showing_effect(state, mono, 80, 24, UNICODE))
+                self.assertFalse(self.drawn(state, mono, 80, 24))
+
+    def test_no_effect_without_a_reading(self):
+        for state in (weather.initial_state("lisbon"), weather.failed(resolved_state(), "offline", NOW0)):
+            with self.subTest(state=state):
+                self.assertIsNone(weather.showing_effect(state, T0, 80, 24, UNICODE))
+                self.assertFalse(self.drawn(state, T0, 80, 24))
+
+    def test_effect_only_in_the_icon_tiers(self):
+        # full needs 29x11, big with icon 29x9, big 27x9.
+        state = full_state()
+        for cols, rows, shows in [(29, 11, True), (29, 9, True), (28, 11, False), (29, 8, False), (20, 2, False), (4, 1, False)]:
+            with self.subTest(cols=cols, rows=rows):
+                self.assertEqual(weather.showing_effect(state, T0, cols, rows, UNICODE) is not None, shows)
+                if not shows:
+                    self.assertFalse(self.drawn(state, T0, cols, rows))
+
+    def test_uncolored_but_still_drawn_without_color(self):
+        caps = weather.Caps(color=False, unicode=True)
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW):
+            with self.subTest(sky=sky):
+                frame = self.frame(full_state(sky=sky), T0, 80, 24, caps)
+                self.assertIsNone(SGR.search(frame))
+                self.assertNotEqual(frame, weather.build_frame(full_state(sky=sky), T0, 80, 24, caps))
+
+    def test_ascii_glyphs_without_unicode(self):
+        for sky in (weather.Sky.RAIN, weather.Sky.SNOW):
+            for mono in self.TIMES:
+                with self.subTest(sky=sky, mono=mono):
+                    frame = self.frame(full_state(sky=sky), mono, 80, 24, ASCII)
+                    self.assertTrue(frame.isascii())
+                    self.assertNotEqual(frame, weather.build_frame(full_state(sky=sky), mono, 80, 24, ASCII))
+
+
+class FrameRateTest(unittest.TestCase):
+    def test_8_while_an_effect_shows_else_1(self):
+        cases = [
+            (full_state(), T0, 80, 24, 8),
+            (full_state(sky=weather.Sky.STORM), T0, 80, 24, 8),
+            (reading_state(sky=weather.Sky.SNOW), T0, 29, 9, 8),
+            (full_state(), T0 + 30 * MIN, 80, 24, 1),
+            (full_state(), T0 + 3 * HOUR, 80, 24, 1),
+            (full_state(), T0, 28, 24, 1),
+            (full_state(), T0, 20, 2, 1),
+            (full_state(sky=weather.Sky.CLEAR), T0, 80, 24, 1),
+            (full_state(sky=weather.Sky.CLOUDY), T0, 80, 24, 1),
+            (full_state(sky=None), T0, 80, 24, 1),
+            (weather.initial_state("lisbon"), T0, 80, 24, 1),
+        ]
+        for state, mono, cols, rows, fps in cases:
+            with self.subTest(sky=state.reading and state.reading.sky, mono=mono, cols=cols, rows=rows):
+                self.assertEqual(weather.frame_rate(state, mono, cols, rows, UNICODE), fps)
+        self.assertEqual(weather.frame_rate(full_state(), T0, 80, 24, weather.Caps(color=False, unicode=False)), 8)
+
+
+class FrameTimingTest(unittest.TestCase):
+    EPOCH = 1790000000.0  # a whole second
+
+    def test_boundary_is_in_the_future_and_within_one_period(self):
+        for fps in (1, 8):
+            period = 1 / fps
+            for offset in (0.0, 1e-9, 0.1, 0.125, 0.4999, 0.5, 0.75, 0.999999):
+                now = self.EPOCH + offset
+                with self.subTest(fps=fps, now=now):
+                    boundary = weather.next_boundary(now, fps)
+                    self.assertGreater(boundary, now)
+                    self.assertLessEqual(boundary - now, period + 1e-9)
+
+    def test_boundaries_fall_on_every_whole_second(self):
+        for fps in (1, 8):
+            with self.subTest(fps=fps):
+                t = self.EPOCH - 0.001
+                seen = []
+                while t < self.EPOCH + 3:
+                    t = weather.next_boundary(t, fps)
+                    seen.append(t)
+                for second in (1, 2, 3):
+                    self.assertIn(self.EPOCH + second, seen)
+                self.assertEqual(len(seen), 3 * fps + 1)
 
 
 class NoReadingFrameTest(unittest.TestCase):
@@ -334,6 +783,48 @@ class SizeTierTest(unittest.TestCase):
             with self.subTest(cols=cols, rows=rows):
                 self.assertEqual(self.tier(reading_state(), cols, rows), self.big(UNICODE) if expected == "big" else expected)
 
+    def test_big_with_icon_tier_at_exact_thresholds(self):
+        # The rain icon is 11 wide, then a 2-cell gap, then the 16-wide digits.
+        state = reading_state(sky=weather.Sky.RAIN)
+        big_with_icon = self.tier(state, 80, 24)
+        self.assertEqual(len(big_with_icon), 8)
+        self.assertEqual(big_with_icon[5:], ["Light rain · °C", "Lisbon, Lisbon District, PT", "updated just now"])
+        for caps, rows in ((UNICODE, 9), (ASCII, 14)):
+            cases = [
+                (29, rows, self.tier(state, 80, 24, caps)),
+                (28, rows, self.tier(reading_state(), 80, 24, caps)),
+                (29, rows - 1, self.tier(reading_state(), 29, rows - 1, caps)),
+            ]
+            for cols, r, expected in cases:
+                with self.subTest(unicode=caps.unicode, cols=cols, rows=r):
+                    self.assertEqual(self.tier(state, cols, r, caps), expected)
+        self.assertEqual(self.tier(state, 29, 8), self.COMPACT_AGE)
+
+    def test_full_tier_at_exact_thresholds(self):
+        # Two detail lines under the big-with-icon tier: 29 wide, 11 rows.
+        state = full_state()
+        full = self.tier(state, 80, 24)
+        self.assertEqual(
+            full[5:],
+            ["Light rain · °C", "feels 9° · H 14° L 7°", "wind 12 km/h NW · rain 40%", "Lisbon, Lisbon District, PT", "updated just now"],
+        )
+        for caps, rows in ((UNICODE, 11), (ASCII, 16)):
+            big_with_icon = self.tier(reading_state(sky=weather.Sky.RAIN), 80, 24, caps)
+            cases = [
+                (29, rows, self.tier(state, 80, 24, caps)),
+                (29, rows - 1, big_with_icon),
+                (29, rows - 2, big_with_icon),
+                (28, rows, self.tier(reading_state(), 80, 24, caps)),
+            ]
+            for cols, r, expected in cases:
+                with self.subTest(unicode=caps.unicode, cols=cols, rows=r):
+                    self.assertEqual(self.tier(state, cols, r, caps), expected)
+
+    def test_one_detail_line_needs_one_row_more_than_big_with_icon(self):
+        state = full_state(wind_speed=None, rain=None)
+        self.assertIn("feels 9° · H 14° L 7°", self.tier(state, 29, 10))
+        self.assertNotIn("feels 9° · H 14° L 7°", self.tier(state, 29, 9))
+
     def test_ascii_reading_tiers_at_exact_thresholds(self):
         cases = [
             (27, 14, "big"),
@@ -381,6 +872,10 @@ class SizeTierTest(unittest.TestCase):
         """(state, time, how many distinct layouts it has, blank included)."""
         return [
             (reading_state(), T0, 5),
+            (reading_state(sky=weather.Sky.RAIN), T0, 6),
+            (full_state(), T0, 7),
+            (full_state("F", sky=weather.Sky.SNOW, wind_speed=0.1), T0 + 45 * 60, 7),
+            (reading_state(-104.0, "Thunderstorm, hail", "F", sky=weather.Sky.STORM), T0 + 45 * 60, 6),
             (reading_state(-104.0, "Thunderstorm, hail", "F"), T0 + 45 * 60, 5),
             (weather.failed(reading_state(), "bad response", at(20 * 60)), T0 + 20 * 60, 5),
             (weather.initial_state("springfield"), T0, 3),
@@ -393,7 +888,7 @@ class SizeTierTest(unittest.TestCase):
             for state, mono, count in self.states():
                 seen = set()
                 for cols in range(1, 60):
-                    for rows in range(1, 16):
+                    for rows in range(1, 19):
                         frame = weather.build_frame(state, mono, cols, rows, caps)
                         with self.subTest(unicode=caps.unicode, state=state.label, cols=cols, rows=rows):
                             self.assertEqual([len(line) for line in grid(frame)], [cols] * rows)
@@ -547,6 +1042,29 @@ class PlainOutputTest(unittest.TestCase):
         code, out, _ = self.run_plain(http, ["Lisbon", "--units", "imperial"])
         self.assertEqual((code, out), (0, "Lisbon, Lisbon District, PT 70°F Clear\n"))
         self.assertIn("temperature_unit=fahrenheit", http.urls[-1])
+        self.assertIn("wind_speed_unit=mph", http.urls[-1])
+
+    def test_forecast_asks_for_todays_forecast_in_local_time_and_the_wind_unit(self):
+        http = FakeHttp()
+        self.run_plain(http)
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(http.urls[-1]).query)
+        self.assertEqual(query["timezone"], ["auto"])
+        self.assertEqual(query["forecast_days"], ["1"])
+        self.assertEqual(query["wind_speed_unit"], ["kmh"])
+        self.assertEqual(
+            set(query["current"][0].split(",")),
+            {"temperature_2m", "weather_code", "apparent_temperature", "wind_speed_10m", "wind_direction_10m", "is_day"},
+        )
+        self.assertEqual(
+            set(query["daily"][0].split(",")),
+            {"temperature_2m_max", "temperature_2m_min", "precipitation_probability_max"},
+        )
+
+    def test_the_line_is_unchanged_by_the_new_fields(self):
+        for forecast in (forecast_json(), full_forecast_json()):
+            with self.subTest(forecast=forecast):
+                _, out, _ = self.run_plain(FakeHttp(forecast=forecast))
+                self.assertEqual(out, "Lisbon, Lisbon District, PT 12°C Light rain\n")
 
     def test_ascii_line_drops_the_degree_sign(self):
         _, out, _ = self.run_plain(FakeHttp(), unicode=False)
