@@ -2,10 +2,18 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+**Projects (classic) error.** `gh issue view` and `gh pr view` without `--json`, and `gh pr edit`, exit 1 with `GraphQL: Projects (classic) is being deprecated…`, because `gh` still queries the retired `projectCards` field. Read with `--json` fields, and write a PR through the REST API:
+
+- **Read**: `gh issue view <n> --json title,body,labels,comments` / `gh pr view <n> --json title,body,labels,comments`
+- **Edit a PR**: `gh api -X PATCH repos/<owner>/<repo>/pulls/<n> -F body=@<file>` (also `-f title=...`). Labels: `gh api -X POST repos/<owner>/<repo>/issues/<n>/labels -f 'labels[]=...'`.
+- **Unaffected**: `gh issue create`, `gh issue edit`, `gh issue list --json`, `gh pr create`, `gh pr list`.
+
+Before rewriting a PR body, read the live one: the owner ticks its checkboxes on GitHub.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
+- **Read an issue**: `gh issue view <number> --json title,body,labels,comments`, filtering comments by `jq`.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
@@ -19,11 +27,11 @@ Infer the repo from `git remote -v`; `gh` does this automatically when run insid
 
 When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
 
-- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
+- **Read a PR**: `gh pr view <number> --json title,body,labels,comments` and `gh pr diff <number>` for the diff.
 - **List external PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments` then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` (drop `OWNER`/`MEMBER`/`COLLABORATOR`).
-- **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`, `gh pr close`.
+- **Comment / label / close**: `gh pr comment`, labels through `gh api` (see the Projects (classic) error above), `gh pr close`.
 
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either: resolve with `gh pr view 42` and fall back to `gh issue view 42`.
+GitHub shares one number space across issues and PRs, so a bare `#42` may be either: resolve with `gh pr view 42 --json number` and fall back to `gh issue view 42 --json number`.
 
 ## When a skill says "publish to the issue tracker"
 
@@ -31,7 +39,7 @@ Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments`.
+Run `gh issue view <number> --json title,body,labels,comments`.
 
 ## Wayfinding operations
 
