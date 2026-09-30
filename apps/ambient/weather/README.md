@@ -270,6 +270,35 @@ screen. If geocoding or the fetch fails, it prints the cause to stderr
 (`weather.py: offline`), prints nothing to stdout, and exits 1. A
 place name with no match exits 2, as above. It doesn't retry.
 
+## Simulating
+
+`simulate.py`, beside the app, runs the same pane with a fake network
+that reports a chosen Sky, so each icon and Effect can be seen without
+waiting for the weather:
+
+```
+python3 apps/ambient/weather/simulate.py rain
+python3 apps/ambient/weather/simulate.py clear --night
+python3 apps/ambient/weather/simulate.py rain --stale-after 20
+python3 apps/ambient/weather/simulate.py rain --fetch-every 15 --delay 3
+```
+
+The Sky is one of `clear`, `cloudy`, `rain`, `snow` or `storm`. The
+place is `Simulated, XX`, and the Reading's values are fixed: 4°C,
+feels 1°, high 6°, low 0°, wind 14 km/h W and rain 85%. Options:
+
+| Option | What it does |
+|---|---|
+| `--night` | reports night, so Clear draws the moon |
+| `--stale-after S` | the Reading goes Stale after S seconds instead of 30 minutes |
+| `--fetch-every S` | the Fetch interval is S seconds instead of 15 minutes |
+| `--delay S` | each fetch blocks for S seconds, like a slow network |
+| `--units` | as for the app; the values are the same numbers in either unit |
+
+`NO_COLOR` and `PYTHONIOENCODING=ascii` apply as they do to the app.
+Everything else is the app's own code: the layouts, the loop, the
+signals and the teardown.
+
 ## Known limitations
 
 - Only the top geocoding match is used. An ambiguous name can resolve
