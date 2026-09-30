@@ -24,10 +24,11 @@ Read the contract for the class you are working in.
   `<class>-<app>-v<N>` (e.g. `ambient-weather-v2`), cut fresh from
   `main`. Branches from before this rule have no suffix and are
   version 1 (`ambient-clock`, `ambient-weather`)
-- The agent commits locally only; the user pushes and opens the
-  PR. The PR body closes the version's spec issue and every
-  ticket under it (`Closes #20`, `Closes #21`, …). GitHub deletes
-  the branch on merge
+- The agent commits locally; the user pushes. Once the branch is
+  on GitHub, the agent opens the PR with `gh pr create`. The user
+  alone merges. The PR body closes the version's spec issue and
+  every ticket under it (`Closes #20`, `Closes #21`, …). GitHub
+  deletes the branch on merge
 
 ## ROADMAP.md
 
