@@ -15,7 +15,7 @@ Read the contract for the class you are working in.
 
 - Python 3, stdlib only by default
 - One directory per app, one file where possible
-- No shared package. Duplicate until the third repetition.
+- No shared package. Apps duplicate code rather than share it (docs/adr/0001-no-code-shared-across-apps.md)
 - Run as: python3 apps/<class>/<name>/<name>.py
 - If an app needs a dependency, add PEP 723 inline metadata and run
   with uv

@@ -39,14 +39,21 @@ Difficulty is relative to the clock, which is the baseline.
 
 ## Next
 
-- **ping** (ambient) — latency to a host as a scrolling
-  sparkline. Difficulty: low. Establishes the ring buffer pattern
-  that resource-viz reuses.
+- **ping** (ambient) — latency to one host as a scrolling
+  sparkline. Difficulty: low. Unprivileged ICMP socket (no root,
+  no subprocess), IPv4, one Probe a second, default host
+  `1.1.1.1`. History of 1024 Samples drawn newest-right,
+  autoscaled with a 20 ms floor; current Sample in big digits;
+  stat line over the visible Samples. Columns and digits colored
+  by a Ramp from blue (<50 ms) through purple and magenta to hot
+  pink (>=200 ms); Loss is a gray full-height column. Size tiers
+  down to a blank pane, a line per Sample when piped, `NO_COLOR`
+  and ASCII fallback. Out: IPv6, multiple hosts, flags beyond the
+  host, persisted History, any Effect.
 
-  The ambient scaffold (setup/loop/teardown) exists twice, in
-  clock and weather, and so does the rain Effect (clock's `rain`
-  theme, weather's drops). Ping is the third ambient app: decide
-  there whether to extract the scaffold.
+  Scaffold decision made here: apps copy rather than share code
+  (docs/adr/0001-no-code-shared-across-apps.md).
+  In progress: #26
 
 - **resource-viz** (ambient) — abstract visualization of system
   load. Difficulty: moderate. v1 is CPU only, one visual
