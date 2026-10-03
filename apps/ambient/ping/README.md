@@ -1,8 +1,8 @@
 # ping
 
 Latency to one host, one ICMP Probe a second: the current Sample in
-big digits, a scrolling sparkline of recent Samples colored from blue
-when fast to hot pink when slow, and min, avg, max and loss over what
+big digits, a scrolling sparkline of recent Samples colored from green
+when fast through yellow to red when slow, and min, avg, max and loss over what
 the sparkline shows.
 
 ## Usage
@@ -100,14 +100,14 @@ own Sample, in 256-color:
 
 | Step | Round-trip time | Color |
 |---|---|---|
-| 0 | under 50 ms | 26 |
-| 1 | 50 ms | 62 |
-| 2 | 63 ms | 56 |
-| 3 | 79 ms | 92 |
-| 4 | 100 ms | 128 |
-| 5 | 126 ms | 164 |
-| 6 | 159 ms | 199 |
-| 7 | 200 ms and above | 201 |
+| 0 | under 50 ms | 46 green |
+| 1 | 50 ms | 118 |
+| 2 | 63 ms | 190 |
+| 3 | 79 ms | 226 yellow |
+| 4 | 100 ms | 220 |
+| 5 | 126 ms | 214 orange |
+| 6 | 159 ms | 208 |
+| 7 | 200 ms and above | 196 red |
 
 Each step starts at its threshold. The thresholds are log-spaced,
 50 · 2^(k/3) ms rounded. A Loss is gray (244), outside the Ramp. The

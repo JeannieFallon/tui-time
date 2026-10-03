@@ -45,8 +45,8 @@ Difficulty is relative to the clock, which is the baseline.
   `1.1.1.1`. History of 1024 Samples drawn newest-right,
   autoscaled with a 20 ms floor; current Sample in big digits;
   stat line over the visible Samples. Columns and digits colored
-  by a Ramp from blue (<50 ms) through purple and magenta to hot
-  pink (>=200 ms); Loss is a gray full-height column. Size tiers
+  by a Ramp from green (<50 ms) through yellow to red
+  (>=200 ms); Loss is a gray full-height column. Size tiers
   down to a blank pane, a line per Sample when piped, `NO_COLOR`
   and ASCII fallback. Out: IPv6, multiple hosts, flags beyond the
   host, persisted History, any Effect.

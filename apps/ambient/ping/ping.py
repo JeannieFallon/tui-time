@@ -292,11 +292,12 @@ def header_texts(host, address, reason, g):
     return [text + g["sep"] + reason, reason] if reason else [text]
 
 
-# The Ramp: 256-color steps from blue when fast to hot pink when slow. A
+# The Ramp: 256-color steps from green when fast through yellow to red when
+# slow. A
 # round-trip time takes the step after the last threshold it reaches, so
 # step 0 is under 50 ms and step 7 is 200 ms and above. The thresholds
 # between are log-spaced, 50 · 2^(k/3) ms rounded.
-RAMP = (26, 62, 56, 92, 128, 164, 199, 201)
+RAMP = (46, 118, 190, 226, 220, 214, 208, 196)
 RAMP_THRESHOLDS = (50, 63, 79, 100, 126, 159, 200)  # ms
 LOSS_COLOR = 244  # gray, outside the Ramp
 

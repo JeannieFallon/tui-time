@@ -90,5 +90,5 @@ The fixed-capacity ring of recent samples, newest last. Lives only as long as th
 _Avoid_: Buffer, log, window
 
 **Ramp**:
-The ordered palette steps a sample's round-trip time maps onto, from blue when fast to hot pink when slow. A loss is outside the ramp.
+The ordered palette steps a sample's round-trip time maps onto, from green when fast through yellow to red when slow. A loss is outside the ramp.
 _Avoid_: Gradient, heatmap, scale
