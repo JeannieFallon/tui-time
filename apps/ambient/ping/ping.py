@@ -276,7 +276,7 @@ def value_text(sample):
         return "loss"
     if sample < 1:
         return "<1"
-    return str(int(math.floor(sample + 0.5)))
+    return str(round_half_up(sample))
 
 
 # One line of a frame: its text, and the 256-color index of its text, or
@@ -284,11 +284,12 @@ def value_text(sample):
 Line = namedtuple("Line", "text color", defaults=(None,))
 
 
-def header_text(host, address, reason, g):
-    """The host as typed and the address it resolved to, then the latest
-    Sample's error, if it has one."""
+def header_texts(host, address, reason, g):
+    """The header, widest first: the host as typed and the address it
+    resolved to, then the latest Sample's error, if it has one; then the
+    error alone, which is the part that changes."""
     text = address if host == address else f"{host} ({address})"
-    return text + g["sep"] + reason if reason else text
+    return [text + g["sep"] + reason, reason] if reason else [text]
 
 
 # The Ramp: 256-color steps from blue when fast to hot pink when slow. A
@@ -418,7 +419,7 @@ def tier_cells(history, host, address, reason, cols, rows, caps):
 
     Resolving: the host and "resolving…"; "resolving…" alone; blank.
     Otherwise, largest first: full (header, big digits, "ms" line,
-    sparkline, stat line); chart (header, sparkline, stat line); strip
+    sparkline, stat line, with the header's widest form that fits); chart (header, sparkline, stat line); strip
     (the value, then a one-row sparkline); value; blank. Full and chart
     fill the pane, the sparkline taking the rows left over. Strip and value
     sit on the middle row.
@@ -434,9 +435,9 @@ def tier_cells(history, host, address, reason, cols, rows, caps):
 
     latest = history.latest
     visible = history.newest(cols)
-    header = Line(header_text(host, address, reason, g))
     stat = Line(stat_text(visible, g))
-    if len(header.text) <= cols and len(stat.text) <= cols:
+    header = next((Line(text) for text in header_texts(host, address, reason, g) if len(text) <= cols), None)
+    if header is not None and len(stat.text) <= cols:
         big = big_lines(latest, caps)
         top = None
         if max(len(line.text) for line in big) <= cols and rows >= 1 + len(big) + FULL_MIN_BARS + 1:
@@ -604,8 +605,13 @@ class Prober:
         return Outcome((self.clock() - self.sent_at) * 1000, None)
 
 
-# What wait_for saw: the socket readable, the deadline passed, or a resize.
-READY, TIMEOUT, WOKEN = "ready", "timeout", "woken"
+class Wake(enum.Enum):
+    """Why wait_for returned: the socket is readable, the deadline came, or
+    the pane was resized."""
+
+    READABLE = "readable"
+    DEADLINE = "deadline"
+    RESIZED = "resized"
 
 
 def probe_round(prober, seq, deadline, wait, redraw):
@@ -614,9 +620,9 @@ def probe_round(prober, seq, deadline, wait, redraw):
     outcome = prober.send(seq)
     while outcome is None:
         event = wait(prober.fileno(), deadline)
-        if event is TIMEOUT:
+        if event is Wake.DEADLINE:
             return Outcome(LOSS, None)
-        if event is WOKEN:
+        if event is Wake.RESIZED:
             redraw()
             continue
         outcome = prober.receive(seq)
@@ -677,7 +683,7 @@ def parse_args(argv):
 
 def no_such_name_error(host):
     """Exit 2 with a usage error: the host name doesn't exist."""
-    make_parser().error(f"{host!r} has no IPv4 address")
+    make_parser().error(f"no IPv4 address found for {host!r}")
 
 
 def get_pane_size():
@@ -703,12 +709,12 @@ def next_probe(last, now):
 
 def wait_for(fd, deadline, wake_fd):
     """Sleep until fd (if not None) is readable, the deadline passes, or a
-    resize arrives. Returns READY, TIMEOUT or WOKEN."""
+    resize arrives. Returns the Wake."""
     fds = [f for f in (fd, wake_fd) if f is not None]
     while not resized:
         timeout = deadline - time.time()
         if timeout <= 0:
-            return TIMEOUT
+            return Wake.DEADLINE
         ready, _, _ = select.select(fds, [], [], timeout)
         if wake_fd in ready:
             try:
@@ -716,8 +722,8 @@ def wait_for(fd, deadline, wake_fd):
             except BlockingIOError:
                 pass
         if fd is not None and fd in ready:
-            return READY
-    return WOKEN
+            return Wake.READABLE
+    return Wake.RESIZED
 
 
 def write_out(text):
@@ -754,7 +760,7 @@ def rounds(prober, wait, redraw):
     seq = 0
     boundary = next_second(time.time())
     while True:
-        while wait(None, boundary) is WOKEN:
+        while wait(None, boundary) is Wake.RESIZED:
             redraw()
         yield probe_round(prober, seq, boundary + 1, wait, redraw)
         seq = (seq + 1) % 65536
@@ -809,7 +815,7 @@ def run_pane(host, sock, caps, wake_fd):
             if address is not None:
                 break
             deadline = time.time() + RESOLVE_RETRY
-            while wait(None, deadline) is WOKEN:
+            while wait(None, deadline) is Wake.RESIZED:
                 draw()
         draw()
         for outcome in rounds(Prober(sock, address), wait, draw):

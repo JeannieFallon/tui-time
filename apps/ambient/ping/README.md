@@ -42,7 +42,8 @@ sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
 
 The host is resolved once, at startup, to its first IPv4 address, and
 never again. A name that doesn't exist (`EAI_NONAME`), or that has no
-IPv4 address (`EAI_NODATA`), exits 2. Any other resolution failure,
+IPv4 address (`EAI_NODATA`), exits 2 with
+`no IPv4 address found for 'name'`. Any other resolution failure,
 such as the network being down, shows the resolving pane
 (`one.one.one.one · resolving…`) and retries every 5 seconds, without
 backing off.
@@ -58,8 +59,10 @@ is recorded when:
 
 When the latest Sample is a Loss from a failed send or an ICMP error,
 the reason follows the header:
-`one.one.one.one (1.1.1.1) · network unreachable`. It goes when the
-next Sample isn't one. A plain timeout has no reason.
+`one.one.one.one (1.1.1.1) · network unreachable`. When that is too
+wide for the pane, the header shows the reason alone. The reason goes
+when the next Sample isn't one. A Loss that got no reply has no
+reason.
 
 A frame is drawn when each Sample lands. A resize redraws at once,
 even while a reply is awaited. The pane draws no Effect.
@@ -138,7 +141,8 @@ middle row. The strip's sparkline fills the rest of the line, at least
 the first Sample, the value reads `…`.
 
 The header and stat line set the width full and chart need, so they
-move with the host name, the error reason and the numbers. The header
+move with the host name, the error reason and the numbers. A header
+with a reason falls back to the reason alone before a tier is dropped. The header
 `one.one.one.one (1.1.1.1)` is 25 columns wide, and the stat line
 around 37. Big digits are 5 columns wide with a 1-column gap.
 
@@ -188,8 +192,9 @@ python3 apps/ambient/ping/simulate.py --prefill 0
 
 The host reads `simulated (192.0.2.1)`. The script sweeps up through
 10, 35, 55, 70, 90, 110, 140, 180 and 260 ms and back down, three
-Samples at each, so every step shows. Then it adds four timed-out
-Losses and four `network unreachable` send errors, and repeats.
+Samples at each, so every step shows. Then it adds four
+Losses with no reply and four `network unreachable` send errors, and
+repeats.
 Replies land at once. A scripted Loss lands when its Probe times out,
 like a real one.
 

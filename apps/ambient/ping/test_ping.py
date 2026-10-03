@@ -285,12 +285,12 @@ class FakeWait:
 class ProbeRoundTest(unittest.TestCase):
     def test_the_reply_ends_the_round(self):
         prober = FakeProber(receive=[None, ping.Outcome(12.3, None)])
-        wait = FakeWait(ping.READY, ping.READY)
+        wait = FakeWait(ping.Wake.READABLE, ping.Wake.READABLE)
         self.assertEqual(ping.probe_round(prober, 0, 101.0, wait, lambda: None), ping.Outcome(12.3, None))
         self.assertEqual(wait.deadlines, [101.0, 101.0])
 
     def test_no_reply_before_the_next_probe_is_due_is_a_loss(self):
-        wait = FakeWait(ping.READY, ping.TIMEOUT)
+        wait = FakeWait(ping.Wake.READABLE, ping.Wake.DEADLINE)
         outcome = ping.probe_round(FakeProber(receive=[None]), 0, 101.0, wait, lambda: None)
         self.assertEqual(outcome, ping.Outcome(ping.LOSS, None))
 
@@ -303,7 +303,7 @@ class ProbeRoundTest(unittest.TestCase):
     def test_a_resize_while_waiting_redraws_and_keeps_waiting(self):
         redraws = []
         prober = FakeProber(receive=[ping.Outcome(12.3, None)])
-        wait = FakeWait(ping.WOKEN, ping.READY)
+        wait = FakeWait(ping.Wake.RESIZED, ping.Wake.READABLE)
         outcome = ping.probe_round(prober, 0, 101.0, wait, lambda: redraws.append(1))
         self.assertEqual((outcome, redraws), (ping.Outcome(12.3, None), [1]))
 
@@ -656,8 +656,16 @@ class SizeTierTest(unittest.TestCase):
         self.assertEqual(resolving(9), [])
         self.assertEqual(resolving(12, ASCII), ["resolving..."])
 
-    def test_a_long_header_drops_the_layouts_that_show_it(self):
-        lines = lines_of(frame(history(12.3), 40, 24, reason="network unreachable"))
+    def test_a_reason_too_wide_beside_the_host_shows_alone(self):
+        # "one.one.one.one (1.1.1.1) · network unreachable" is 47 wide.
+        lines = lines_of(frame(history(12.3, ping.LOSS), 46, 24, reason="network unreachable"))
+        self.assertEqual(lines[0], "network unreachable")
+        self.assertIn("min", lines[-1])
+        lines = lines_of(frame(history(12.3, ping.LOSS), 47, 24, reason="network unreachable"))
+        self.assertEqual(lines[0], "one.one.one.one (1.1.1.1) · network unreachable")
+
+    def test_a_host_too_wide_for_the_pane_drops_the_layouts_that_show_it(self):
+        lines = lines_of(frame(history(12.3), 40, 24, host="a-very-long-host-name.example.com"))
         self.assertEqual(len(lines), 1)
 
     def test_frames_never_clip(self):
@@ -672,7 +680,8 @@ class SizeTierTest(unittest.TestCase):
                         f = frame(h, cols, rows, caps, reason="host unreachable")
                         for line in lines_of(f):
                             if "one" in line or "unreach" in line:
-                                self.assertEqual(line, header if caps.unicode else header.replace("·", "-"))
+                                full = header if caps.unicode else header.replace("·", "-")
+                                self.assertIn(line, (full, "host unreachable"))
                             elif "avg" in line or line.startswith("min") or "%" in line:
                                 self.assertRegex(line, r"^min \S+  avg \S+  max \S+  loss \d+%$")
                             elif "m" in line and line != "ms":
