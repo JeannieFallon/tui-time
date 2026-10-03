@@ -517,12 +517,12 @@ class RampTest(unittest.TestCase):
                 self.assertEqual(ping.ramp_step(rtt), step)
 
     def test_steps_run_from_blue_to_hot_pink(self):
-        self.assertEqual(ping.RAMP, (26, 62, 56, 92, 128, 164, 199, 198))
+        self.assertEqual(ping.RAMP, (26, 62, 56, 92, 128, 164, 199, 205))
 
     def test_each_column_takes_its_own_samples_step(self):
         rows = styled(frame(history(30.0, 70.0, 250.0, ping.LOSS), cols=40, rows=11))
         bottom = rows[9]
-        self.assertEqual([color for _, color in bottom[36:]], [26, 56, 198, 244])  # steps 0, 2, 7 and gray
+        self.assertEqual([color for _, color in bottom[36:]], [26, 56, 205, 244])  # steps 0, 2, 7 and gray
 
     def test_a_loss_column_is_gray_all_the_way_up(self):
         rows = styled(frame(history(5.0, ping.LOSS), cols=40, rows=11))
@@ -640,7 +640,7 @@ class SizeTierTest(unittest.TestCase):
 
     def test_value_takes_the_samples_color(self):
         rows = styled(frame(history(250.0), 9, 1))
-        self.assertEqual({c for ch, c in rows[0] if ch != " "}, {198})
+        self.assertEqual({c for ch, c in rows[0] if ch != " "}, {205})
 
     def test_before_the_first_sample(self):
         self.assertEqual(self.tier(14, 1, h=history()), ["…"])

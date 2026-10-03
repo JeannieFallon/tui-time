@@ -107,7 +107,7 @@ own Sample, in 256-color:
 | 4 | 100 ms | 128 |
 | 5 | 126 ms | 164 |
 | 6 | 159 ms | 199 |
-| 7 | 200 ms and above | 198 |
+| 7 | 200 ms and above | 205 |
 
 Each step starts at its threshold. The thresholds are log-spaced,
 50 · 2^(k/3) ms rounded. A Loss is gray (244), outside the Ramp. The
