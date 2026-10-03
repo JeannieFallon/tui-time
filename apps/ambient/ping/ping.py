@@ -296,7 +296,7 @@ def header_texts(host, address, reason, g):
 # round-trip time takes the step after the last threshold it reaches, so
 # step 0 is under 50 ms and step 7 is 200 ms and above. The thresholds
 # between are log-spaced, 50 · 2^(k/3) ms rounded.
-RAMP = (26, 62, 56, 92, 128, 164, 199, 205)
+RAMP = (26, 62, 56, 92, 128, 164, 199, 201)
 RAMP_THRESHOLDS = (50, 63, 79, 100, 126, 159, 200)  # ms
 LOSS_COLOR = 244  # gray, outside the Ramp
 
