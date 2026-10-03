@@ -204,6 +204,51 @@ by default, so the pane is full from the first frame. `NO_COLOR` and
 is the app's own code: the layouts, the loop, the signals and the
 teardown.
 
+## Manual testing
+
+The checklist in `docs/verify.md` applies. These steps cover what the
+unit tests and `simulate.py` don't: real slow replies.
+
+### A slow connection on localhost
+
+`tc` with netem adds delay, jitter and loss to the loopback interface,
+so real Probes to localhost land at the slow end of the Ramp. It needs
+root, and it slows every program's loopback traffic until it is
+removed.
+
+1. Add the delay:
+
+   ```
+   sudo tc qdisc add dev lo root netem delay 100ms 30ms loss 10%
+   ```
+
+   If this fails with `RTNETLINK answers: File exists`, a qdisc is
+   already on `lo`. Remove it with step 4 first.
+
+2. Probe localhost:
+
+   ```
+   python3 apps/ambient/ping/ping.py localhost
+   ```
+
+3. Check the pane. The header reads `localhost (127.0.0.1)`. Both the
+   Probe and its reply leave through `lo`, so expect each to be
+   delayed and dropped once. That gives round-trip times of about
+   140 to 260 ms, in steps 5 to 7 (orange to red), and about one
+   Sample in five a gray Loss. The stat line's avg should sit near
+   200 ms. To see other steps, change the delay: the round trip is
+   about twice it.
+
+4. Remove the delay when done, even if the app has already exited:
+
+   ```
+   sudo tc qdisc del dev lo root
+   ```
+
+   `tc qdisc show dev lo` then shows `noqueue` again, and
+   `python3 apps/ambient/ping/ping.py localhost` shows replies under
+   1 ms (`<1`).
+
 ## Known limitations
 
 - IPv4 only, and one host.
