@@ -32,6 +32,10 @@ _Avoid_: Tick, refresh rate
 One of an app's ordered layouts, chosen by the largest one that fits the current pane.
 _Avoid_: Mode, breakpoint, fallback
 
+**Palette**:
+The fixed set of colors an app, or a clock theme, draws with.
+_Avoid_: Theme (when only colors are meant)
+
 **Effect**:
 The time-varying, decorative part of a frame, such as starfield or rain. In the clock the theme picks it; in weather the sky does.
 _Avoid_: Animation, background
@@ -41,10 +45,6 @@ _Avoid_: Animation, background
 **Theme**:
 A named bundle of one palette and at most one effect, selected at launch.
 _Avoid_: Skin, style, color scheme
-
-**Palette**:
-The fixed set of colors a theme uses.
-_Avoid_: Theme (when only colors are meant)
 
 ### Weather
 
@@ -70,3 +70,25 @@ A reading older than two fetch intervals. Still shown, but marked as old.
 **Expired**:
 A reading too old to show as current. The pane shows no reading instead.
 _Avoid_: Invalid, dead
+
+### Ping
+
+**Probe**:
+One echo request sent to the host.
+_Avoid_: Packet, ping (for a single request)
+
+**Sample**:
+The outcome of one probe: a round-trip time or a loss.
+_Avoid_: Reply, RTT (for the outcome as a whole), measurement
+
+**Loss**:
+A sample whose probe got no reply before the next probe was due.
+_Avoid_: Timeout, drop
+
+**History**:
+The fixed-capacity ring of recent samples, newest last. Lives only as long as the app runs.
+_Avoid_: Buffer, log, window
+
+**Ramp**:
+The ordered palette steps a sample's round-trip time maps onto, from green when fast through yellow to red when slow. A loss is outside the ramp.
+_Avoid_: Gradient, heatmap, scale

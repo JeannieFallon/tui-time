@@ -1,0 +1,3 @@
+# No code shared across apps
+
+Ping is the third ambient app, and the ambient scaffold (alternate screen, cursor, signals, SIGWINCH flag, boundary sleep) now exists in three copies. The old rule "duplicate until the third repetition" pointed at extraction. We decided against it: each app stays a single self-contained file run as `python3 apps/<class>/<name>/<name>.py`. A shared module would need `sys.path` tricks or packaging, and it would make apps depend on each other. That cost is larger than the cost of roughly 60 duplicated lines per app. The same applies to Effects such as rain and to ping's ring buffer when resource-viz needs one.
