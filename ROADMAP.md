@@ -37,29 +37,31 @@ Difficulty is relative to the clock, which is the baseline.
   later version).
   Shipped: #25
 
-## Next
-
 - **ping** (ambient) — latency to one host as a scrolling
-  sparkline. Difficulty: low. Unprivileged ICMP socket (no root,
-  no subprocess), IPv4, one Probe a second, default host
-  `1.1.1.1`. History of 1024 Samples drawn newest-right,
-  autoscaled with a 20 ms floor; current Sample in big digits;
-  stat line over the visible Samples. Columns and digits colored
-  by a Ramp from green (<50 ms) through yellow to red
-  (>=200 ms); Loss is a gray full-height column. Size tiers
-  down to a blank pane, a line per Sample when piped, `NO_COLOR`
-  and ASCII fallback. Out: IPv6, multiple hosts, flags beyond the
-  host, persisted History, any Effect.
+  sparkline. Unprivileged ICMP socket (no root, no subprocess),
+  IPv4, one Probe a second, default host `1.1.1.1`, resolved once
+  (no such name or no IPv4 address exits 2; a refused socket exits
+  1 naming `net.ipv4.ping_group_range`). History of 1024 Samples
+  drawn newest-right, autoscaled with a 20 ms floor; current Sample
+  in big digits; stat line over the visible Samples. Columns and
+  digits colored by a Ramp from green (<50 ms) through yellow to
+  red (>=200 ms), replacing the specced blue-to-hot-pink; Loss is a
+  gray full-height column, and a send error's reason shows in the
+  header. Size tiers down to a blank pane, a line per Sample when
+  piped, `NO_COLOR` and ASCII fallback. `simulate.py` sweeps the
+  Ramp with a fake prober; the README has a `tc netem` procedure
+  for real slow replies on localhost. Out: IPv6, multiple hosts,
+  flags beyond the host, persisted History, any Effect.
+  Shipped: #33
 
-  Scaffold decision made here: apps copy rather than share code
-  (docs/adr/0001-no-code-shared-across-apps.md).
-  In progress: #26
+## Next
 
 - **resource-viz** (ambient) — abstract visualization of system
   load. Difficulty: moderate. v1 is CPU only, one visual
-  metaphor. Memory, disk, network are v2. Reuses ping's ring
-  buffer. Needs an exponential moving average on every input; raw samples jitter and read as
-  broken. Sampling from /proc is the easy part, the mapping from
+  metaphor. Memory, disk, network are v2. Copies ping's History
+  pattern (docs/adr/0001-no-code-shared-across-apps.md). Needs an
+  exponential moving average on every input; raw samples jitter
+  and read as broken. Sampling from /proc is the easy part, the mapping from
   numbers to aesthetics is the app.
 
 ## Backlog
